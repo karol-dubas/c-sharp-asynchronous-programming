@@ -36,36 +36,36 @@
      Code after `await` will run once task has completed and it will run on the same thread that spawned asynchronous operation
   - re-throws exceptions that occured inside the `Task` if task failed
 
-```cs
-    private async void Search_Click(object sender, RoutedEventArgs e)
-    {
-        BeforeLoadingStockData();
-
-        var getStocksTask = GetStocks();
-
-        await getStocksTask;
-
-        // Everything after await is a continuation
-
-        AfterLoadingStockData();
-    }
-
-    private async Task GetStocks()
-    {
-        try
-        {
-            var store = new DataStore();
-
-            var responseTask = store.GetStockPrices(StockIdentifier.Text);
-
-            Stocks.ItemsSource = await responseTask; // Spawns async operation
-        }
-        catch (Exception ex) // Possible exception re-throw with await
-        {
-            Notes.Text = ex.Message;
-        }
-    }
-```
+  ```cs
+  private async void Search_Click(object sender, RoutedEventArgs e)
+  {
+      BeforeLoadingStockData();
+  
+      var getStocksTask = GetStocks();
+  
+      await getStocksTask;
+  
+      // Everything after await is a continuation
+  
+      AfterLoadingStockData();
+  }
+  
+  private async Task GetStocks()
+  {
+      try
+      {
+          var store = new DataStore();
+  
+          var responseTask = store.GetStockPrices(StockIdentifier.Text);
+  
+          Stocks.ItemsSource = await responseTask; // Spawns async operation
+      }
+      catch (Exception ex) // Possible exception re-throw with await
+      {
+          Notes.Text = ex.Message;
+      }
+  }
+  ```
 
 # 2.6 - Creating own async method
 
@@ -73,6 +73,7 @@
 - `async void` should be used only for event handlers
 - `Task` represents an asynchoronous operation
 - `async Task` method automatically returns `Task`, without explicit `return`. Compiler does it for us.
+  
     ```cs
     public class Class 
     {
@@ -95,8 +96,81 @@
     }
     ```
 - `Task` object returned from an asynchronous method is a reference to operation/result/error
+  
 ```cs
 var getStocksTask = GetStocks(); // Create separate thread with the code
 await getStocksTask; // Execute code
 ```
 
+# 2.7 - Handling exceptions
+
+## Missing await
+
+- Re-throwing exceptions sets the `Task` to faulted with an exception
+- Without `await` exception isn't re-throwed
+  
+```cs
+private async void Search_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        /*await*/ GetStocks();
+
+        // Execution isn't awaited, so it continues before the call is completed
+        // and we have no idea what happened to this task
+    }
+    catch (Exception ex) // No await = no catch
+    {
+        Notes.Text = ex.Message;
+    }
+}
+
+private async Task GetStocks()
+{
+    var store = new DataStore();
+    var responseTask = store.GetStockPrices(StockIdentifier.Text);
+    Stocks.ItemsSource = await responseTask; // Exception thrown here
+    // Task status is set to Faulted, with no exception attached
+}
+```
+
+## async void
+
+- If `async` method returns a `Task` then we can use all additional info, e.g. exceptions
+  (`Task` is automatically returned, when method signature indicates it).
+  But when it returns `void` there is no additional info (and call can't be awaited)
+- It may crash the application when there is an unhandled exception. 
+  Exceptions occuring in `async void` can't be caught
+
+  ```cs
+  private void Search_Click(object sender, RoutedEventArgs e)
+  {
+      try
+      {
+          GetStocks();
+      }
+      catch (Exception ex)
+      {
+          Notes.Text = ex.Message;
+      }
+  }  
+
+  private async void GetStocks() // async void
+  {
+      try
+      {
+          var store = new DataStore();
+          var responseTask = store.GetStockPrices(StockIdentifier.Text);
+          Stocks.ItemsSource = await responseTask; // Exception thrown here
+      }
+      catch (Exception ex) // Demo try catch, it's useless (lost stack trace)
+      {
+          // Application crashes here, because exception can't be set on a Task,
+          // the return type is void, not a Task.
+          // Exception is thrown back to the caller.
+          throw ex;
+      }
+  }
+  ```
+
+  - Deleting/commenting `throw` will "help", whole code in `async void` method should be in try, catch, finally blocks without `throw`

@@ -25,30 +25,64 @@ public partial class MainWindow : Window
 
 
 
-    private async void Search_Click(object sender, RoutedEventArgs e)
+    // private void Search_Click(object sender, RoutedEventArgs e)
+    // {
+    //     try
+    //     {
+    //         BeforeLoadingStockData();
+    //         GetStocks();
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         Notes.Text = ex.Message;
+    //     }
+    //     finally
+    //     {
+    //         AfterLoadingStockData();
+    //     }
+    // }
+    //
+    // private async void GetStocks()
+    // {
+    //     try
+    //     {
+    //         var store = new DataStore();
+    //         var responseTask = store.GetStockPrices(StockIdentifier.Text);
+    //         Stocks.ItemsSource = await responseTask;
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         throw ex;
+    //     }
+    // }
+    
+    private void Search_Click(object sender, RoutedEventArgs e)
     {
         BeforeLoadingStockData();
-
-        var getStocksTask = GetStocks();
-
-        await getStocksTask;
-
-        AfterLoadingStockData();
-    }
-
-    private async Task GetStocks()
-    {
+        
         try
         {
-            var store = new DataStore();
-
-            var responseTask = store.GetStockPrices(StockIdentifier.Text);
-
-            Stocks.ItemsSource = await responseTask;
+            GetStocks();
         }
         catch (Exception ex)
         {
             Notes.Text = ex.Message;
+        }
+        
+        AfterLoadingStockData();
+    }
+
+    private async void GetStocks()
+    {
+        try
+        {
+            var store = new DataStore();
+            var responseTask = store.GetStockPrices(StockIdentifier.Text);
+            Stocks.ItemsSource = await responseTask;
+        }
+        catch (Exception ex)
+        {
+            throw ex;
         }
     }
 
