@@ -78,7 +78,8 @@ public partial class MainWindow : Window
         {
             var store = new DataStore();
             var responseTask = store.GetStockPrices(StockIdentifier.Text);
-            Stocks.ItemsSource = await responseTask;
+            await responseTask;
+            Stocks.ItemsSource = responseTask.Result;
         }
         catch (Exception ex)
         {
