@@ -61,6 +61,19 @@
       }
   }
   ```
+  - Can be used only with method that returns `Task`
+    
+    ```cs
+    public async Task AsyncTaskMethod()
+    {
+        await TaskMethod();
+    }
+
+    private Task TaskMethod()
+    {
+        // ...
+    }
+    ```
 
 # 2.6 - Creating own async method
 
@@ -166,7 +179,7 @@ private async Task GetStocks()
           // Returning an exception in Task would be correct (compiler does it automatically).
           throw ex;
 
-          // throw remove will help
+          // throw removal will help
       }
   }
   ```
@@ -176,9 +189,11 @@ private async Task GetStocks()
 
 # 2.8 - Best practices
 
-- Asynchronous ASP.NET relieves web server of work and it can take care of other requests while asynchronous operations are running
-- `.Result` or `Wait()` on `Task` variable will block thread, it will run synchronously and it may deadlock whole application,
-  but using `.Result` in the continuation is fine
+- Asynchronous ASP.NET relieves web server of work and it can take care of other requests while asynchronous
+  operations are running
+- `.Result` or `Wait()` on `Task` variable will block thread, execution will run synchronously
+  and it may deadlock whole application
+- Using `.Result` in the continuation is fine
 
   ```cs
   private async void GetStocks()
@@ -212,19 +227,18 @@ Task task1 = Task.Run(() => { /* Heavy operation */ });
 Task task2 = Task.Run<T>(() => { return new T(); });
 ```
 
-# 3.1 - TPL - creating async operation with Task
-
+# 3.1 - Task intro
 
 ```cs
 // Offloading work on another thread.
 // It queues this anonymous method execution on the thread pool
-// and it shoud be executed immediately.
+// and it shoud be executed immediately (assuming that thread pool isn't busy).
 var data = await Task.Run(() =>
 {
-    var lines = File.ReadAllLines("StockPrices_Small.csv");
+    var lines = File.ReadAllLines("file.csv"); // Assuming that async version isn't available
     var data = new List<StockPrice>();
     
-    foreach (var line in lines.Skip(1))
+    foreach (var line in lines)
     {
         var price = StockPrice.FromCSV(line);
         data.Add(price);
@@ -234,4 +248,14 @@ var data = await Task.Run(() =>
 });
 
 Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+```
+
+# 3.2 - Creating async operation with TPL Task
+
+- When not awaiting `Task.Run`, the task scheduler will queue this to the thread pool,
+  it will execute that whenever there is an available thread.
+  This call will complete immediately and code execution will continue (no await)
+
+```cs
+Task.Run(() => {});
 ```
