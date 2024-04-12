@@ -259,3 +259,35 @@ Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
 ```cs
 Task.Run(() => {});
 ```
+
+# 3.3 - Obtaining the async result without async await keywords
+
+- Alternative approach to subscribe to an async operation
+- `async` & `await` is easier to read, has less code and is less error prone
+
+```cs
+private void Search_Click(...)
+{
+    try
+    {
+        var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
+
+        // ContinueWith allows for continuation and it will run when task has finished, but
+        // in contrast to await it won't execute delegate on the original thread
+        var processStocksTask = loadLinesTask.ContinueWith(completedTask =>
+        {
+            // Task has completed, so using Result is ok here,
+            // it won't lock any thread, it just contains what the task returns
+            var lines = completedTask.Result;
+
+            // process data...
+        }
+    }
+    catch (Exception ex)
+    {
+        Notes.Text = ex.Message;
+    }
+}
+```
+
+# 3.4 - Nested asynchronous operations

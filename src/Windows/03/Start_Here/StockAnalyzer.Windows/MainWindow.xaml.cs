@@ -24,18 +24,23 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
     }
+    
 
 
-
-    private async void Search_Click(object sender, RoutedEventArgs e)
+    private void Search_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             BeforeLoadingStockData();
 
-            var data = await Task.Run(() =>
+            var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
+
+            // ContinueWith allows for continuation and it will run when task has finished, but
+            // ContinueWith in contrast to await won't execute delegate on the original thread
+            var processStocksTask = loadLinesTask.ContinueWith(completedTask =>
             {
-                var lines = File.ReadAllLines("StockPrices_Small.csv");
+                // Task has completed, so using Result is ok, it won't lock any thread it contains what the task returns
+                var lines = completedTask.Result;
                 var data = new List<StockPrice>();
                 
                 foreach (var line in lines.Skip(1))
@@ -44,21 +49,21 @@ public partial class MainWindow : Window
                     data.Add(price);
                 }
                 
-                return data;
+                Dispatcher.Invoke(() => {
+                    Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+                });
             });
             
-            Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+            processStocksTask.ContinueWith(_ => {
+                Dispatcher.Invoke(AfterLoadingStockData);
+            });
         }
         catch (Exception ex)
         {
             Notes.Text = ex.Message;
         }
-        finally
-        {
-            AfterLoadingStockData();
-        }
     }
-
+    
     private async Task GetStocks()
     {
         try
