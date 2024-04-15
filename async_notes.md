@@ -8,7 +8,7 @@
 - Asynchronous operations occurs in parallel, but it subscribes to when that operation completes
 - `Task` represents asynchronous operation
 - `await` waits for the operation to be completed, then continues execution. Pauses execution of the method until a result is available, without blocking the calling thread
-- When debugging `await` call, while waiting for response control is returned to the calling thread 
+- When debugging `await` call, while waiting for response control is returned to the calling thread (e.g. UI)
 
 ### Usage examples:
 - network resources
@@ -17,8 +17,6 @@
 - database
 
 ## Parrarel Programming
-
-### Overview
 - Task Parrarel Library (TPL)
 - Suitable for CPU bound operations
 - Split and solve small pieces independently, use as much computer resources as possible
@@ -32,14 +30,14 @@
   - Retrieves result when available
   - Makes sure that there were no exceptions with awaited task
   - Introduces continuation that allows to get back to the original context (thread). 
-     Code after `await` will run once task has completed and it will run on the same thread that spawned asynchronous operation
+    Code after `await` will run once task has completed and it will run on the same thread that spawned asynchronous operation
   - Re-throws exceptions that occured inside the `Task`, if task failed
 
   ```cs
   async void Search_Click(...)
   {
       var getStocksTask = GetStocks();
-      await getStocksTask;
+      await getStocksTask; // async/await all the way up
   
       // Everything after await is a continuation
   
@@ -51,7 +49,7 @@
       try
       {
           var store = new DataStore();
-          var responseTask = store.GetStockPrices(StockIdentifier.Text);
+          Task responseTask = store.GetStockPrices();
           Stocks.ItemsSource = await responseTask; // Spawns async operation
       }
       // If responseTask throws an exception (on execution), then it will be re-throwed (await) and caught here
@@ -69,7 +67,7 @@
         await TaskMethod();
     }
 
-    Task TaskMethod()
+    Task TaskMethod() // no async
     {
         // ...
     }
@@ -82,28 +80,29 @@
 - `Task` represents an asynchoronous operation
 - `async Task` method automatically returns `Task`, without explicit `return`. Compiler does it for us.
   
-```cs
-public class Class 
-{
-    public async Task Method() { }
-}
-```
+  ```cs
+  public class Class 
+  {
+      public async Task Method() { }
+  }
+  ```
 
-is compiled to:
+  is compiled to:
 
-```cs
-// Other generated code...
+  ```cs
+  // Other generated code...
 
-public Task Method()
-{
-    <Method>d__0 stateMachine = new <Method>d__0();
-    stateMachine.<>t__builder = AsyncTaskMethodBuilder.Create();
-    stateMachine.<>4__this = this;
-    stateMachine.<>1__state = -1;
-    stateMachine.<>t__builder.Start(ref stateMachine);
-    return stateMachine.<>t__builder.Task;
-}
-```
+  public Task Method()
+  {
+      <Method>d__0 stateMachine = new <Method>d__0();
+      stateMachine.<>t__builder = AsyncTaskMethodBuilder.Create();
+      stateMachine.<>4__this = this;
+      stateMachine.<>1__state = -1;
+      stateMachine.<>t__builder.Start(ref stateMachine);
+      return stateMachine.<>t__builder.Task;
+  }
+  ```
+
 - `Task` object returned from an asynchronous method is a reference to operation/result/error
   
 ```cs
@@ -118,30 +117,28 @@ await getStocksTask; // Execute code
 - Re-throwing exceptions sets the `Task` to faulted with an exception
 - Without `await`, exception isn't re-throwed
   
-```cs
-async void Search_Click(...)
-{
-    try
-    {
-        /*await*/ GetStocks();
-
-        // Execution isn't awaited, so it continues before the call is completed
-        // and we have no idea what happened to this task
-    }
-    catch (Exception ex) // No await = no catch
-    {
-        Notes.Text = ex.Message;
-    }
-}
-
-async Task GetStocks()
-{
-    var store = new DataStore();
-    var responseTask = store.GetStockPrices(StockIdentifier.Text);
-    Stocks.ItemsSource = await responseTask; // Exception thrown here
-    // Task status is set to Faulted, with no exception attached
-}
-```
+  ```cs
+  async void Search_Click(...)
+  {
+      try
+      {
+          /*await*/ GetStocks();
+  
+          // Execution isn't awaited, so it continues before the call is completed
+          // and we have no idea what happened to this task
+      }
+      catch (Exception ex) // No await = no catch
+      {
+          Notes.Text = ex.Message;
+      }
+  }
+  
+  async Task GetStocks()
+  {
+      throw new Exception("I love exception mechanism <3");
+      // Task status is set to Faulted
+  }
+  ```
 
 ## async void
 
@@ -168,8 +165,7 @@ async Task GetStocks()
   {
       try
       {
-          var store = new DataStore();
-          var responseTask = store.GetStockPrices(StockIdentifier.Text);
+          // ...
           Stocks.ItemsSource = await responseTask; // Exception thrown here
       }
       catch (Exception ex) // Demo try catch, it's useless (lost stack trace)
@@ -178,14 +174,12 @@ async Task GetStocks()
           // so it's thrown back to the caller and app crashes.
           // Returning an exception in Task would be correct (compiler does it automatically).
           throw ex;
-
-          // throw removal will help
       }
   }
   ```
   
-  - When working with `async void` whole code in method should be in `try`, `catch`, `finally` blocks without `throw`,
-    so it makes sure no exception is thrown back to the caller (prevents app crash)
+  - When working with `async void` whole code in method should be in `try`, `catch`, `finally` blocks,
+    without `throw`, so it makes sure no exception is thrown back to the caller (prevents app crash)
 
 # 2.8 - Best practices
 
@@ -210,15 +204,15 @@ async Task GetStocks()
 
 ## Task class
 
-  - `Task` allows:
-    - Execute work on a different thread
-    - Get the result from asynchronous operation
-    - Subscribe to when operation is done + continuation
-    - Exception handling
+- `Task` allows:
+  - To execute work on a different thread
+  - Get the result from asynchronous operation
+  - Subscribe to when operation is done + continuation
+  - Exception handling
 
 ## Task.Run static method
 
-`Task.Run()` queues methods on the thread pool for execution.
+`Task.Run` queues methods on the thread pool for execution.
 
 ```cs
 Task task1 = Task.Run(() => { /* Heavy operation */ });
@@ -235,7 +229,8 @@ Task task2 = Task.Run<T>(() => { return new T(); });
 // and it shoud be executed immediately (assuming that thread pool isn't busy).
 var data = await Task.Run(() =>
 {
-    var lines = File.ReadAllLines("file.csv"); // Assuming that async version isn't available
+    // Assuming that ReadAllLines async version isn't available
+    var lines = File.ReadAllLines("file.csv");
     var data = new List<StockPrice>();
     
     foreach (var line in lines)
@@ -252,8 +247,8 @@ Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
 
 # 3.2 - Creating async operation with TPL Task
 
-- When not awaiting `Task.Run`, the task scheduler will queue this to the thread pool,
-  it will execute that whenever there is an available thread.
+- When not awaiting `Task.Run`, the task scheduler will queue this to the thread pool
+  and it will execute that whenever there is an available thread.
   This call will complete immediately and code execution will continue (no await)
 
 ```cs
@@ -262,7 +257,7 @@ Task.Run(() => {});
 
 # 3.3 - Obtaining the async result without async await keywords
 
-- Alternative approach to subscribe to an async operation
+- `ContinueWith` is an alternative approach to subscribe to an async operation
 - `async` & `await` is easier to read, has less code and is less error prone
 
 ```cs
@@ -273,15 +268,14 @@ void Search_Click(...)
         var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
 
         // ContinueWith allows for continuation and it will run when task has finished, but
-        // in contrast to await it won't execute delegate on the original thread
         var processStocksTask = loadLinesTask.ContinueWith(completedTask =>
         {
+            // In contrast to await continuation, it won't execute on the original thread.
+            
             // Task has completed, so using Result is ok here,
             // it won't lock any thread, it just contains what the task returns
             var lines = completedTask.Result;
-
-            // process data...
-        }
+        });
     }
     catch (Exception ex)
     {
@@ -313,7 +307,7 @@ async Task NestedAsync()
 
 - No matter how async operation is executed, it should always be validated (exception handling).
   To validate task execution either use:
-  - `async` & `await`
+  - `async`, `await` and `try`, `catch`
     
   ```cs
   try
@@ -325,7 +319,7 @@ async Task NestedAsync()
       // Log e.Message
   }
   ```
-  - Chain `ContinueWith()` with error handling options
+  - Chain `ContinueWith` with error handling options
     
   ```cs
   await task.ContinueWith(t =>
@@ -334,7 +328,7 @@ async Task NestedAsync()
   }, TaskContinuationOptions.OnlyOnFaulted);
   ```
 
-- Working with `ContinueWith()`:
+- Working with `ContinueWith`:
   
 ```cs
 var loadLinesTask = Task.Run(() => throw new FileNotFoundException());
@@ -346,4 +340,111 @@ loadLinesTask.ContinueWith(completedTask =>
     // Will run if successfully completed
 }, TaskContinuationOptions.OnlyOnRanToCompletion);
 ```
-# 3.6 - 
+# 3.6 - Canceling a Task with CancellationTokenSource
+
+- `CancellationTokenSource`:
+  - Provides cancellation request mechanism using cancellation tokens
+  - Signals to a `CancellationToken` that it should be canceled with `Cancel`/`CancelAfter` methods
+  - It is created at the source of an operation/s that may need to be cancelled
+- `CancellationToken`:
+  - Obtained as a property from `CancellationTokenSource`
+  - Indicates to a task that it's canceled, represents cancellation itself,
+    which can be checked or received to handle cancellation request.
+    Doesn't have the capability to trigger cancellation, it only observes
+  - It's passed to various methods that support cancellation, to observe and react to cancellation request
+
+- Using cancellations with async operations:
+  
+```cs
+CancellationTokenSource cts = new();
+CancellationToken ct = cts.Token;
+
+// As a param
+Task.Run(() => { }, ct);
+
+// Within async opertaion, using a property
+Task.Run(() =>
+{
+    if (ct.IsCancellationRequested) { }
+});
+```
+
+
+
+
+
+
+
+# Questions / TODO
+
+1. What is the difference?
+   
+```cs
+Task.Run(() => GetStocks());
+Task.Run(async () => await GetStocks());
+
+async Task GetStocks() { /* ... */ }
+```
+
+1. When `Task.Run` is executed? What is the difference?
+
+```cs
+var loadLinesTask = SearchForStocks();
+
+Task<List<string>> SearchForStocks()
+{
+    return Task.Run(async () =>
+    {
+        // ...
+        return lines;
+    });
+}
+```
+
+```cs
+var loadLinesTask = awaitSearchForStocks();
+
+async Task<List<string>> SearchForStocks()
+{
+    return await Task.Run(async () =>
+    {
+        // ...
+        return lines;
+    });
+}
+```
+
+1. What is the point of that?
+   
+```cs
+async Task AsyncTaskMethod()
+{
+    await TaskMethod();
+}
+
+Task TaskMethod() // no async
+{
+    // ...
+}
+```
+
+1. Can I spawn too many threads and overflow a thread pool?
+
+1. When is the method executed? What if an exception is thrown?
+
+```cs
+void Search_Click(...)
+{
+    try
+    {
+        var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
+        var processStocksTask = loadLinesTask.ContinueWith(completedTask => { /* continuation */ });
+    }
+    catch (Exception ex)
+    {
+        Notes.Text = ex.Message;
+    }
+}
+```
+
+1. Try different `ContinueWith` chain executions, `OnlyOnFaulted` etc.

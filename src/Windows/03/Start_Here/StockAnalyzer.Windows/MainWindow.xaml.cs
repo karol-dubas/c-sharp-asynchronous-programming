@@ -1,132 +1,111 @@
-﻿using Newtonsoft.Json;
-using StockAnalyzer.Core;
-using StockAnalyzer.Core.Domain;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Navigation;
+using StockAnalyzer.Core.Domain;
 
 namespace StockAnalyzer.Windows;
 
 public partial class MainWindow : Window
 {
     private static string API_URL = "https://ps-async.fekberg.com/api/stocks";
-    private Stopwatch stopwatch = new Stopwatch();
-
+    private readonly Stopwatch stopwatch = new();
+    private CancellationTokenSource? cts;
+    
     public MainWindow()
     {
         InitializeComponent();
     }
 
-    async Task NestedAsync()
-    {
-        // Thread 1
-        Task.Run(async () => // anonymous async method automatically returns a `Task`, not `async void`
-        {
-            // Thread 2
-            await Task.Run(() =>
-            {
-                // Thread 3
-            });
-            // Thread 2
-        });
-        // Thread 1
-    }
 
-    async Task ErrorHandling()
+
+    private void Search_Click(object sender, RoutedEventArgs e)
     {
-        var task = Task.Run(() => throw new Exception());
-        
+        if (cts is not null) // cancel scenario
+        {
+            cts.Cancel();
+            cts = null;
+
+            Search.Content = "Search";
+            
+            return;
+        }
+
         try
         {
-            await task;
-        }
-        catch (Exception e)
-        {
-            // Log e.Message
-        }
-        
-        // Or
+            cts = new CancellationTokenSource();
 
-        await task.ContinueWith(t =>
-        {
-            // Log t.Exception.Message (aggregate exception)
-        }, TaskContinuationOptions.OnlyOnFaulted);
-    }
-    
+            Search.Content = "Cancel";
 
-
-    private async void Search_Click(object sender, RoutedEventArgs e)
-    {
-        await ErrorHandling();
-        
-        try
-        {
             BeforeLoadingStockData();
 
-            var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
+            var loadLinesTask = SearchForStocks();
 
-            // ContinueWith allows for continuation and it will run when task has finished, but
-            // ContinueWith in contrast to await won't execute delegate on the original thread
-            var processStocksTask = loadLinesTask.ContinueWith(completedTask =>
+            loadLinesTask.ContinueWith(
+                t => { Dispatcher.Invoke(() => { Notes.Text = t.Exception.InnerException.Message; }); },
+                TaskContinuationOptions.OnlyOnFaulted);
+
+            var processStocksTask = loadLinesTask
+                .ContinueWith(completedTask =>
+                    {
+                        var lines = completedTask.Result;
+
+                        var data = new List<StockPrice>();
+
+                        foreach (string line in lines.Skip(1))
+                        {
+                            var price = StockPrice.FromCSV(line);
+
+                            data.Add(price);
+                        }
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+                        });
+                    },
+                    TaskContinuationOptions.OnlyOnRanToCompletion
+                );
+
+            processStocksTask.ContinueWith(_ =>
             {
-                // Task has completed, so using Result is ok, it won't lock any thread it contains what the task returns
-                var lines = completedTask.Result;
-                var data = new List<StockPrice>();
-                
-                foreach (var line in lines.Skip(1))
+                Dispatcher.Invoke(() =>
                 {
-                    var price = StockPrice.FromCSV(line);
-                    data.Add(price);
-                }
-                
-                Dispatcher.Invoke(() => {
-                    Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+                    AfterLoadingStockData();
+                    cts = null;
+                    Search.Content = "Search";
                 });
-            });
-            
-            processStocksTask.ContinueWith(_ => {
-                Dispatcher.Invoke(AfterLoadingStockData);
             });
         }
         catch (Exception ex)
         {
             Notes.Text = ex.Message;
         }
+        finally
+        {
+            cts = null;
+        }
     }
-    
-    private async Task GetStocks()
+
+    private static Task<List<string>> SearchForStocks()
     {
-        try
+        return Task.Run(async () =>
         {
-            var store = new DataStore();
+            using var stream = new StreamReader(File.OpenRead("StockPrices_Small.csv"));
+            var lines = new List<string>();
 
-            var responseTask = store.GetStockPrices(StockIdentifier.Text);
+            string line;
+            while ((line = await stream.ReadLineAsync()) != null)
+                lines.Add(line);
 
-            Stocks.ItemsSource = await responseTask;
-        }
-        catch (Exception ex)
-        {
-            throw;
-        }
+            return lines;
+        });
     }
-
-
-
-
-
-
-
-
-
-
 
 
     private void BeforeLoadingStockData()
