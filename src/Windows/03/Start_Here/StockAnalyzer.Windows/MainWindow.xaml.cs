@@ -24,11 +24,49 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
     }
+
+    async Task NestedAsync()
+    {
+        // Thread 1
+        Task.Run(async () => // anonymous async method automatically returns a `Task`, not `async void`
+        {
+            // Thread 2
+            await Task.Run(() =>
+            {
+                // Thread 3
+            });
+            // Thread 2
+        });
+        // Thread 1
+    }
+
+    async Task ErrorHandling()
+    {
+        var task = Task.Run(() => throw new Exception());
+        
+        try
+        {
+            await task;
+        }
+        catch (Exception e)
+        {
+            // Log e.Message
+        }
+        
+        // Or
+
+        await task.ContinueWith(t =>
+        {
+            // Log t.Exception.Message (aggregate exception)
+        }, TaskContinuationOptions.OnlyOnFaulted);
+    }
     
 
 
-    private void Search_Click(object sender, RoutedEventArgs e)
+    private async void Search_Click(object sender, RoutedEventArgs e)
     {
+        await ErrorHandling();
+        
         try
         {
             BeforeLoadingStockData();

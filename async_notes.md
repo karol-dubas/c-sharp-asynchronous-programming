@@ -36,7 +36,7 @@
   - Re-throws exceptions that occured inside the `Task`, if task failed
 
   ```cs
-  private async void Search_Click(...)
+  async void Search_Click(...)
   {
       var getStocksTask = GetStocks();
       await getStocksTask;
@@ -46,7 +46,7 @@
       AfterLoadingStockData();
   }
   
-  private async Task GetStocks()
+  async Task GetStocks()
   {
       try
       {
@@ -64,12 +64,12 @@
   - Can be used only with method that returns `Task`
     
     ```cs
-    public async Task AsyncTaskMethod()
+    async Task AsyncTaskMethod()
     {
         await TaskMethod();
     }
 
-    private Task TaskMethod()
+    Task TaskMethod()
     {
         // ...
     }
@@ -119,7 +119,7 @@ await getStocksTask; // Execute code
 - Without `await`, exception isn't re-throwed
   
 ```cs
-private async void Search_Click(...)
+async void Search_Click(...)
 {
     try
     {
@@ -134,7 +134,7 @@ private async void Search_Click(...)
     }
 }
 
-private async Task GetStocks()
+async Task GetStocks()
 {
     var store = new DataStore();
     var responseTask = store.GetStockPrices(StockIdentifier.Text);
@@ -152,7 +152,7 @@ private async Task GetStocks()
   Exceptions occuring in `async void` can't be caught
 
   ```cs
-  private void Search_Click(...)
+  void Search_Click(...)
   {
       try
       {
@@ -164,7 +164,7 @@ private async Task GetStocks()
       }
   }  
 
-  private async void GetStocks() // async void method
+  async void GetStocks() // async void method
   {
       try
       {
@@ -196,7 +196,7 @@ private async Task GetStocks()
 - Using `.Result` in the continuation is fine
 
   ```cs
-  private async void GetStocks()
+  async void GetStocks()
   {
       var store = new DataStore();
       var responseTask = store.GetStockPrices("MSFT");
@@ -266,7 +266,7 @@ Task.Run(() => {});
 - `async` & `await` is easier to read, has less code and is less error prone
 
 ```cs
-private void Search_Click(...)
+void Search_Click(...)
 {
     try
     {
@@ -291,3 +291,59 @@ private void Search_Click(...)
 ```
 
 # 3.4 - Nested asynchronous operations
+
+```cs
+async Task NestedAsync()
+{
+    // Thread 1
+    Task.Run(async () => // anonymous async method automatically returns a `Task`, not `async void`
+    {
+        // Thread 2
+        await Task.Run(() =>
+        {
+            // Thread 3
+        });
+        // Thread 2
+    });
+    // Thread 1
+}
+```
+
+# 3.5 - Handling Task success and failure
+
+- No matter how async operation is executed, it should always be validated (exception handling).
+  To validate task execution either use:
+  - `async` & `await`
+    
+  ```cs
+  try
+  {
+      await task;
+  }
+  catch (Exception e)
+  {
+      // Log e.Message
+  }
+  ```
+  - Chain `ContinueWith()` with error handling options
+    
+  ```cs
+  await task.ContinueWith(t =>
+  {
+      // Log t.Exception.Message (aggregate exception)
+  }, TaskContinuationOptions.OnlyOnFaulted);
+  ```
+
+- Working with `ContinueWith()`:
+  
+```cs
+var loadLinesTask = Task.Run(() => throw new FileNotFoundException());
+
+loadLinesTask.ContinueWith(completedTask => { /* Will always run */ });
+
+loadLinesTask.ContinueWith(completedTask =>
+{
+    // Will run if successfully completed
+}, TaskContinuationOptions.OnlyOnRanToCompletion);
+```
+# 3.6 - 
