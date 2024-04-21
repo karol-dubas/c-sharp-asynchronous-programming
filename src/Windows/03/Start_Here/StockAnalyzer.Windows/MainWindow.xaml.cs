@@ -26,57 +26,64 @@ public partial class MainWindow : Window
 
     private void Search_Click(object sender, RoutedEventArgs e)
     {
-        if (cts is not null) // cancel scenario
+        // Cancel loading
+        if (cts is not null)
         {
             cts.Cancel();
             cts = null;
-
             Search.Content = "Search";
-            
             return;
         }
-
+        
         try
         {
-            cts = new CancellationTokenSource();
-
-            Search.Content = "Cancel";
-
             BeforeLoadingStockData();
 
-            var loadLinesTask = SearchForStocks();
+            cts = new CancellationTokenSource();
+            cts.Token.Register(() => Notes.Text = "Cancellation requested");
+            Search.Content = "Cancel";
 
-            loadLinesTask.ContinueWith(
-                t => { Dispatcher.Invoke(() => { Notes.Text = t.Exception.InnerException.Message; }); },
-                TaskContinuationOptions.OnlyOnFaulted);
+            var loadLinesTask = SearchForStocks(cts.Token);
 
-            var processStocksTask = loadLinesTask
-                .ContinueWith(completedTask =>
-                    {
-                        var lines = completedTask.Result;
+            loadLinesTask.ContinueWith(t =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    Notes.Text = t.Exception.InnerException.Message;
+                });
 
-                        var data = new List<StockPrice>();
+            }, TaskContinuationOptions.OnlyOnFaulted);
 
-                        foreach (string line in lines.Skip(1))
+            var processStocksTask =
+                loadLinesTask
+                    .ContinueWith((completedTask) =>
                         {
-                            var price = StockPrice.FromCSV(line);
+                            var lines = completedTask.Result;
 
-                            data.Add(price);
-                        }
+                            var data = new List<StockPrice>();
 
-                        Dispatcher.Invoke(() =>
-                        {
-                            Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
-                        });
-                    },
-                    TaskContinuationOptions.OnlyOnRanToCompletion
-                );
+                            foreach (var line in lines.Skip(1))
+                            {
+                                var price = StockPrice.FromCSV(line);
+
+                                data.Add(price);
+                            }
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                Stocks.ItemsSource = data.Where(sp => sp.Identifier == StockIdentifier.Text);
+                            });
+                        },
+                        TaskContinuationOptions.OnlyOnRanToCompletion
+                    );
 
             processStocksTask.ContinueWith(_ =>
             {
                 Dispatcher.Invoke(() =>
                 {
                     AfterLoadingStockData();
+                    
+                    // Reset cts
                     cts = null;
                     Search.Content = "Search";
                 });
@@ -86,24 +93,25 @@ public partial class MainWindow : Window
         {
             Notes.Text = ex.Message;
         }
-        finally
-        {
-            cts = null;
-        }
     }
 
-    private static Task<List<string>> SearchForStocks()
+    private static Task<List<string>> SearchForStocks(CancellationToken ct)
     {
-        return Task.Run(async () =>
-        {
-            using var stream = new StreamReader(File.OpenRead("StockPrices_Small.csv"));
-            var lines = new List<string>();
+        return Task.Run(async () => { 
+            using(var stream = new StreamReader(File.OpenRead("StockPrices_Small.csv")))
+            {
+                var lines = new List<string>();
 
-            string line;
-            while ((line = await stream.ReadLineAsync()) != null)
-                lines.Add(line);
+                string line;
+                while((line = await stream.ReadLineAsync(ct)) != null)
+                {
+                    if (ct.IsCancellationRequested)
+                        break;
+                    lines.Add(line);
+                }
 
-            return lines;
+                return lines;
+            }
         });
     }
 

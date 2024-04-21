@@ -107,7 +107,7 @@
   
 ```cs
 var getStocksTask = GetStocks(); // Create separate thread, with the code to execute
-await getStocksTask; // Execute code
+await getStocksTask; // Execute this code
 ```
 
 # 2.7 - Handling exceptions
@@ -185,8 +185,8 @@ await getStocksTask; // Execute code
 
 - Asynchronous ASP.NET relieves web server of work and it can take care of other requests while asynchronous
   operations are running
-- `.Result` or `Wait()` on `Task` variable will block thread, execution will run synchronously
-  and it may deadlock whole application
+- `.Result` or `Wait` on `Task` variable will block thread, execution will run synchronously,
+  it may even deadlock whole application
 - Using `.Result` in the continuation is fine
 
   ```cs
@@ -205,10 +205,10 @@ await getStocksTask; // Execute code
 ## Task class
 
 - `Task` allows:
-  - To execute work on a different thread
-  - Get the result from asynchronous operation
-  - Subscribe to when operation is done + continuation
-  - Exception handling
+  - to execute work on a different thread
+  - to get the result from asynchronous operation
+  - to subscribe to when operation is done + continuation
+  - for exception handling
 
 ## Task.Run static method
 
@@ -229,7 +229,7 @@ Task task2 = Task.Run<T>(() => { return new T(); });
 // and it shoud be executed immediately (assuming that thread pool isn't busy).
 var data = await Task.Run(() =>
 {
-    // Assuming that ReadAllLines async version isn't available
+    // Assuming that ReadAllLinesAsync version isn't available
     var lines = File.ReadAllLines("file.csv");
     var data = new List<StockPrice>();
     
@@ -258,7 +258,6 @@ Task.Run(() => {});
 # 3.3 - Obtaining the async result without async await keywords
 
 - `ContinueWith` is an alternative approach to subscribe to an async operation
-- `async` & `await` is easier to read, has less code and is less error prone
 
 ```cs
 void Search_Click(...)
@@ -267,7 +266,7 @@ void Search_Click(...)
     {
         var loadLinesTask = Task.Run(() => File.ReadAllLines("StockPrices_Small.csv"));
 
-        // ContinueWith allows for continuation and it will run when task has finished, but
+        // ContinueWith allows for continuation and it will run when task has finished
         var processStocksTask = loadLinesTask.ContinueWith(completedTask =>
         {
             // In contrast to await continuation, it won't execute on the original thread.
@@ -283,6 +282,7 @@ void Search_Click(...)
     }
 }
 ```
+- `async` & `await` is easier to read, has less code and is less error prone
 
 # 3.4 - Nested asynchronous operations
 
@@ -297,7 +297,7 @@ async Task NestedAsync()
         {
             // Thread 3
         });
-        // Thread 2
+        // Thread 2 (continuation)
     });
     // Thread 1
 }
@@ -312,6 +312,7 @@ async Task NestedAsync()
   ```cs
   try
   {
+    // ...
       await task;
   }
   catch (Exception e)
@@ -319,7 +320,7 @@ async Task NestedAsync()
       // Log e.Message
   }
   ```
-  - Chain `ContinueWith` with error handling options
+  - `ContinueWith` with error handling options
     
   ```cs
   await task.ContinueWith(t =>
@@ -342,32 +343,82 @@ loadLinesTask.ContinueWith(completedTask =>
 ```
 # 3.6 - Canceling a Task with CancellationTokenSource
 
-- `CancellationTokenSource`:
-  - Provides cancellation request mechanism using cancellation tokens
-  - Signals to a `CancellationToken` that it should be canceled with `Cancel`/`CancelAfter` methods
-  - It is created at the source of an operation/s that may need to be cancelled
-- `CancellationToken`:
-  - Obtained as a property from `CancellationTokenSource`
-  - Indicates to a task that it's canceled, represents cancellation itself,
-    which can be checked or received to handle cancellation request.
-    Doesn't have the capability to trigger cancellation, it only observes
-  - It's passed to various methods that support cancellation, to observe and react to cancellation request
-
-- Using cancellations with async operations:
-  
 ```cs
 CancellationTokenSource cts = new();
 CancellationToken ct = cts.Token;
 
-// As a param
-Task.Run(() => { }, ct);
+// CancellationToken can be passed to async methods
+```
 
-// Within async opertaion, using a property
-Task.Run(() =>
-{
-    if (ct.IsCancellationRequested) { }
+- `CancellationTokenSource`:
+  - Provides cancellation request mechanism using cancellation tokens
+  - Signals to a `CancellationToken` that it should be canceled with `Cancel`/`CancelAfter` methods
+  - Calling `CancellationTokenSource.Cancel` won't automatically cancel asynchronous operations,
+    `CancellationToken` and its members are used for that purpose
+  - It is created at the source of an operation/s that may need to be cancelled
+  
+- `CancellationToken`:
+  - Obtained as a property from `CancellationTokenSource`
+  - Indicates to a task that it's canceled, represents cancellation itself,
+    which can be checked or received to handle cancellation request.
+    Doesn't have the capability to trigger cancellation, it can be only observed
+  - It's passed to various methods that support cancellation, to observe and react to cancellation request
+
+- Passing `CancellationToken` to `Task.Run` won't stop execution "inside",
+  it just won't start `Task.Run` if `CancellationToken` is marked as cancelled
+  
+```cs
+cts.Cancel();
+var task = Task.Run(() => { }, ct); // won't start, doens't affect anonymous method
+task.ContinueWith(t => { }, ct); // same logic applies here
+```
+
+- `TaskStatus` has different values depending on how we chain continuation methods:
+
+```cs
+var ct = new CancellationToken(canceled: true);
+var task = Task.Run(() => "I won't even start", ct);
+
+task.ContinueWith(t => {
+    // t.Status = TaskStatus.Canceled
+});
+
+task.ContinueWith(t => {
+    // t.Status = TaskStatus.Canceled
 });
 ```
+but chaining another `Task` with `ContinueWith` is different:
+
+```cs
+var ct = new CancellationToken(canceled: true);
+var task = Task.Run(() => "I won't even start", ct);
+
+task.ContinueWith(t => {
+    // t.Status = TaskStatus.Canceled
+})
+.ContinueWith(t => {
+    // t.Status = TaskStatus.RanToCompletion
+});
+```
+
+- To cancel own long running task we can use `CancellationToken.IsCancellationRequested`:
+  
+```cs
+Task.Run(() =>
+{
+    while (true)
+    {
+        if (ct.IsCancellationRequested)
+            break;
+    }
+});
+```
+- Execution of operation can be registered on operation cancellation
+  
+```cs
+cts.Token.Register(() => Notes.Text = "Cancellation requested");
+```
+
 
 
 
@@ -448,3 +499,29 @@ void Search_Click(...)
 ```
 
 1. Try different `ContinueWith` chain executions, `OnlyOnFaulted` etc.
+
+1. Multiple awaits and exception.
+   If `responseTask` throws an exception (on execution), then it will be re-throwed (await) and caught, but what about `getStocksTask`?
+
+  ```cs
+  async void Search_Click(...)
+  {
+      var getStocksTask = GetStocks();
+      await getStocksTask;
+      AfterLoadingStockData();
+  }
+  
+  async Task GetStocks()
+  {
+      try
+      {
+          var store = new DataStore();
+          Task responseTask = store.GetStockPrices();
+          Stocks.ItemsSource = await responseTask;
+      }
+      catch (Exception ex)
+      {
+          Notes.Text = ex.Message;
+      }
+  }
+  ```
