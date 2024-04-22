@@ -387,7 +387,7 @@ task.ContinueWith(t => {
     // t.Status = TaskStatus.Canceled
 });
 ```
-but chaining another `Task` with `ContinueWith` is different:
+but chaining next `Task` with `ContinueWith` is different:
 
 ```cs
 var ct = new CancellationToken(canceled: true);
@@ -419,12 +419,20 @@ Task.Run(() =>
 cts.Token.Register(() => Notes.Text = "Cancellation requested");
 ```
 
+# 3.7 - HTTP Client cancellation
 
+- Canceling defined asynchronous methods might be different.
+  Sometimes it might return partial data and sometimes it throws `TaskCanceledException` to let know that it was canceled
 
+```cs
+using var httpClient = new HttpClient();
+var result = await httpClient.GetAsync(url, ct);
+```
 
+# 3.8 - Summary
 
-
-
+- If two methods are needed, sync and async version, don't wrap sync version with `Task.Run` just to make it async.
+  It should be copied and refactored, implemented properly.
 
 # Questions / TODO
 

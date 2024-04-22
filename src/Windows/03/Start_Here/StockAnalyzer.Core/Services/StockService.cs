@@ -29,16 +29,14 @@ public class StockService : IStockService
         // DO NOT DO THIS IN PRODUCTION...
         await Task.Delay((i++) * 1000, cancellationToken);
 
-        using (var client = new HttpClient())
-        {
-            var result = await client.GetAsync($"{API_URL}/{stockIdentifier}",
-                cancellationToken);
+        using var client = new HttpClient();
+        var result = await client.GetAsync($"{API_URL}/{stockIdentifier}",
+            cancellationToken);
 
-            result.EnsureSuccessStatusCode();
+        result.EnsureSuccessStatusCode();
 
-            var content = await result.Content.ReadAsStringAsync();
+        var content = await result.Content.ReadAsStringAsync();
 
-            return JsonConvert.DeserializeObject<IEnumerable<StockPrice>>(content);
-        }
+        return JsonConvert.DeserializeObject<IEnumerable<StockPrice>>(content);
     }
 }
