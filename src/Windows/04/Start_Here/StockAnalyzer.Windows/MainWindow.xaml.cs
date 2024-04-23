@@ -46,7 +46,8 @@ public partial class MainWindow : Window
 
         try
         {
-            cancellationTokenSource = new();
+            cancellationTokenSource = new CancellationTokenSource();
+            cancellationTokenSource.CancelAfter(2000);
 
             cancellationTokenSource.Token.Register(() => {
                 Notes.Text = "Cancellation requested";
@@ -55,15 +56,32 @@ public partial class MainWindow : Window
             Search.Content = "Cancel"; // Button text
 
             BeforeLoadingStockData();
-
+            
+            string[] identifiers = StockIdentifier.Text
+                .Split(',', ' ');
+            
             var service = new StockService();
 
-            var data = await service.GetStockPricesFor(
-                StockIdentifier.Text,
-                cancellationTokenSource.Token
-            );
+            var loadingTasks = new List<Task<IEnumerable<StockPrice>>>();
+            
+            foreach (string identifier in identifiers)
+            {
+                var loadTask = service.GetStockPricesFor(identifier, cancellationTokenSource.Token);
+                loadingTasks.Add(loadTask);
+            }
 
-            Stocks.ItemsSource = data;
+            var timeoutTask = Task.Delay(2000);
+            var loadAllStocksAtOnceTask = Task.WhenAll(loadingTasks);
+
+            var firstCompletedTask = await Task.WhenAny(loadAllStocksAtOnceTask, timeoutTask);
+
+            if (firstCompletedTask == timeoutTask)
+            {
+                cancellationTokenSource.Cancel();
+                throw new OperationCanceledException("Loading timeout");
+            }
+            
+            Stocks.ItemsSource = loadAllStocksAtOnceTask.Result.SelectMany(x => x);
         }
         catch (Exception ex)
         {

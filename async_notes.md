@@ -434,6 +434,58 @@ var result = await httpClient.GetAsync(url, ct);
 - If two methods are needed, sync and async version, don't wrap sync version with `Task.Run` just to make it async.
   It should be copied and refactored, implemented properly.
 
+# 4.2 - Knowing When All or Any Task Completes
+
+```cs
+foreach (string identifier in identifiers)
+{
+    // Each call wii be awaited one by one (await)
+    var loadTask = await service.GetStockPricesFor(identifier, cancellationTokenSource.Token);
+}
+```
+
+- Data can be loaded in parallel by performing multiple asynchronous operations at the same time
+- `Task.WhenALl` accepts a task collection, it creates and returns a `Task`.
+  Returned task status is completed only when all the tasks passed to the method are marked as completed.
+
+  ```cs
+  var loadingTasks = new List<Task<IEnumerable<int>>>();
+
+  foreach (string id in ids)
+  {
+      var loadTask = service.GetAsync(id, cts.Token);
+      loadingTasks.Add(loadTask);
+  }
+  
+  var allResults = await Task.WhenAll(loadingTasks);
+  ```
+
+- With no `await` it isn't executed, it's a representation of loading all the stocks
+
+  ```cs
+  var allResults = Task.WhenAll(loadingTasks);
+  ```
+- `Task.WhenAny` can be used to create a timeout
+
+```cs
+// ...
+
+var timeoutTask = Task.Delay(2000); // timeout after 2s
+var loadAllStocksAtOnceTask = Task.WhenAll(loadingTasks);
+
+var firstCompletedTask = await Task.WhenAny(loadAllStocksAtOnceTask, timeoutTask);
+
+if (firstCompletedTask == timeoutTask)
+    throw new OperationCanceledException("Loading timeout");
+
+return loadAllStocksAtOnceTask.Result;
+```
+
+but it's easier to use `cancellationTokenSource.CancelAfter`
+
+- When `Task.WhenALl/WhenAny` is awaited it ensures that if any task failed within method, the exception will be propagated bak to the calling context
+
+
 # Questions / TODO
 
 1. What is the difference?
