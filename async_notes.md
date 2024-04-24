@@ -485,6 +485,27 @@ but it's easier to use `cancellationTokenSource.CancelAfter`
 
 - When `Task.WhenALl/WhenAny` is awaited it ensures that if any task failed within method, the exception will be propagated bak to the calling context
 
+# 4.3 - Precomputed Results of a Task
+
+- Precomputed results of a `Task` are used to return results from methods where we don't want to use `async` & `await`, or `Task.Run`, so we don't run a new task.
+- Adding `async` & `await` when they're not needed introduces a whole unnecessary async state machine and is just more complex
+- When implementing interface / overriding a method that forces to return a `Task`, but the implementation doesn't have any asynchronous operation, a `Task.CompletedTask` can be returned
+
+```cs
+public Task Method() // no async
+{
+    return Task.CompletedTask;
+    // Everything completed successfuly, with no method signature change
+}
+
+// Async implementation would be awaited
+await Method(); // completes immediately
+```
+
+- Methods `Task.FromResult`, `Task.FromCanceled`, `Task.FromException` can be used like `Task.CompletedTask`, but with a return value. 
+- `Task.FromResult` creates a `Task` which is marked as completed with the specified result, so it's just a result wrapper
+
+================================================
 
 # Questions / TODO
 

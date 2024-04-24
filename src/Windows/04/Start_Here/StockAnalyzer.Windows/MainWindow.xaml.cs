@@ -70,18 +70,18 @@ public partial class MainWindow : Window
                 loadingTasks.Add(loadTask);
             }
 
-            var timeoutTask = Task.Delay(2000);
-            var loadAllStocksAtOnceTask = Task.WhenAll(loadingTasks);
+            //var timeoutTask = Task.Delay(2000);
+            var allStocks = await Task.WhenAll(loadingTasks);
 
-            var firstCompletedTask = await Task.WhenAny(loadAllStocksAtOnceTask, timeoutTask);
+            //var firstCompletedTask = await Task.WhenAny(loadAllStocksAtOnceTask, timeoutTask);
 
-            if (firstCompletedTask == timeoutTask)
-            {
-                cancellationTokenSource.Cancel();
-                throw new OperationCanceledException("Loading timeout");
-            }
+            // if (firstCompletedTask == timeoutTask)
+            // {
+            //     cancellationTokenSource.Cancel();
+            //     throw new OperationCanceledException("Loading timeout");
+            // }
             
-            Stocks.ItemsSource = loadAllStocksAtOnceTask.Result.SelectMany(x => x);
+            Stocks.ItemsSource = allStocks.SelectMany(x => x);
         }
         catch (Exception ex)
         {
@@ -96,6 +96,7 @@ public partial class MainWindow : Window
             Search.Content = "Search";
         }
     }
+    
 
 
 
