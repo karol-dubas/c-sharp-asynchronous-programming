@@ -530,6 +530,7 @@ foreach (string id in ids)
 
     loadingTasks.Add(loadTask);
 }
+
 await Task.WhenAll(loadingTasks);
 ```
 
@@ -543,6 +544,8 @@ await Task.WhenAll(loadingTasks);
     Each method marked with `async` has its own asynchronous context, therefore
     it only affects the continuation in the method that you are operating in.
   - No code after `ConfigureAwait(false)` should require the original context.
+  - `ConfigureAwait(false)` means, that there is no continuation enqueue on a thread pool.
+    It's quicker than waiting for another thread to be available.
 
 ```cs
 private async Task Method1()
@@ -564,12 +567,41 @@ private async Task Method2()
 
 # 4.6. ConfigureAwait in ASP.NET
 
-- `ConfigureAwait(false)` means, that there is no continuation enqueue on a thread pool.
-  It's quicker than waiting for another thread to be available.
 - ASP.NET Core doesn't use synchronization context, thus making `ConfigureAwait(false)` is useless
 - `ConfigureAwait(false)` should be used in libraries, because the library can be used by any type of application
 
-# 5.
+# 5.2. Asynchronous Streams and Disposables
+
+- Allows for asynchronous retrieval of each item
+- `IAsyncEnumerable<T>` exposes an enumerator that provides asynchronous iteration
+- No need to return `Task` if method is `async`
+- Method must `yield return`
+- `async` + `IAsyncEnumerable<T>` = asynchronous enumeration
+- Using `yield return` with `IAsyncEnumerable<T>` signals to the iterator using this enumerator that it has an item to process
+- `IAsyncEnumerable<T>` can't be awaited, because it's an enumeration
+- `await foreach`: 
+  - Is used to asynchronously retrieve the data
+  - It awaits each item in the enumeration
+  - `foreach` body then is a continuation of each enumeration
+
+- Producing a stream:
+
+```cs
+public async IAsyncEnumerable<StockPrice> GetAllStockPrices(CancellationToken ct = default)
+{
+    await Task.Delay(50, ct); // fake delay
+    yield return new StockPrice() { Identifier = "TEST" };
+}
+```
+
+- Consuming a stream:
+
+```cs
+await foreach (var stock in enumerator)
+{
+
+}
+```
 
 ================================================================================================
 

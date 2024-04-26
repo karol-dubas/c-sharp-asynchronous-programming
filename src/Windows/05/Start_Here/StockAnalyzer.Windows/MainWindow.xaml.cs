@@ -5,6 +5,7 @@ using StockAnalyzer.Core.Services;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -14,6 +15,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Navigation;
+using StockAnalyzer.Windows.Services;
 
 namespace StockAnalyzer.Windows;
 
@@ -28,23 +30,53 @@ public partial class MainWindow : Window
     }
 
 
-    CancellationTokenSource? cancellationTokenSource;
+    CancellationTokenSource? cts;
 
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var data = await GetStocksFor(StockIdentifier.Text);
+            cts = new(); // useless now
+            
+            BeforeLoadingStockData();
 
-            Notes.Text = "Stocks loaded!";
-
+            string[] identifiers = StockIdentifier.Text.Split(' ', ',');
+            
+            var data = new ObservableCollection<StockPrice>();
             Stocks.ItemsSource = data;
+
+            var service = new DiskStockStreamService();
+            var enumerator = service.GetAllStockPrices();
+
+            // TODO: are all continuations running on the same new thread?
+            await foreach (var stock in enumerator.WithCancellation(cts.Token))
+            {
+                if (identifiers.Contains(stock.Identifier))
+                    data.Add(stock);
+            }
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             Notes.Text = ex.Message;
         }
+        finally
+        {
+            AfterLoadingStockData();
+        }
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private async Task<IEnumerable<StockPrice>>
         GetStocksFor(string identifier)
@@ -57,19 +89,6 @@ public partial class MainWindow : Window
 
         return data.Take(5);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     private static Task<List<string>> SearchForStocks(
         CancellationToken cancellationToken    
