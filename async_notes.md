@@ -585,3 +585,31 @@ void Search_Click(...)
       }
   }
   ```
+
+1. Check `CancellationTokenSource.Dispose`
+
+1. Is async method with no await started like Task.Run?
+
+```cs
+using var cts = new CancellationTokenSource();
+
+// Is thread pool involved here? How does it wokrk? Is it a different thread?
+var backgroundTask = StartBackgroundService(cts.Token);
+
+// ...
+
+cts.Cancel();
+
+// And what is the task status before and after this?
+// App can't close propetly without this, why is that?
+await backgroundTask;
+
+async Task StartBackgroundService(CancellationToken ct)
+{
+    try
+    {
+        while (!ct.IsCancellationRequested) { /* ... */ }
+    }
+    catch (TaskCanceledException) { }
+}
+```
