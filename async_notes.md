@@ -445,7 +445,7 @@ foreach (string identifier in identifiers)
 ```
 
 - Data can be loaded in parallel by performing multiple asynchronous operations at the same time
-- `Task.WhenALl` accepts a task collection, it creates and returns a `Task`.
+- `Task.WhenAll` accepts a task collection, it creates and returns a `Task`.
   Returned task status is completed only when all the tasks passed to the method are marked as completed.
 
   ```cs
@@ -465,7 +465,8 @@ foreach (string identifier in identifiers)
   ```cs
   var allResults = Task.WhenAll(loadingTasks);
   ```
-- `Task.WhenAny` can be used to create a timeout
+- `Task.WhenAny` returns `Task` after the completion of any first task.
+  It can be used to create a timeout:
 
 ```cs
 // ...
@@ -481,10 +482,128 @@ if (firstCompletedTask == timeoutTask)
 return loadAllStocksAtOnceTask.Result;
 ```
 
-but it's easier to use `cancellationTokenSource.CancelAfter`
+but it's easier to use `cancellationTokenSource.CancelAfter` method to achieve a timeout
 
-- When `Task.WhenALl/WhenAny` is awaited it ensures that if any task failed within method, the exception will be propagated bak to the calling context
+- When `Task.WhenAll/WhenAny` are awaited it ensures that if any task failed within method, the exception will be propagated back to the calling context
 
+# 4.3 - Precomputed Results of a Task
+
+- Precomputed results of a `Task` are used to return results from methods where we don't want to use `async` & `await`, or `Task.Run`, so we don't run a new task.
+- Adding `async` & `await` when they're not needed introduces a whole unnecessary async state machine and is just more complex
+- When implementing interface / overriding a method that forces to return a `Task`, but the implementation doesn't have any asynchronous operation, a `Task.CompletedTask` can be returned instead
+
+```cs
+public Task Method() // no async
+{
+    return Task.CompletedTask;
+    // Everything completed successfuly, with no method signature change
+}
+
+// Async implementation would be awaited
+await Method(); // completes immediately
+```
+
+- Methods `Task.FromResult`, `Task.FromCanceled`, `Task.FromException` can be used like `Task.CompletedTask`, but with a return value. 
+- `Task.FromResult` creates a `Task` which is marked as completed with the specified result, so it's just a `Task` result wrapper
+
+# 4.4. Process Tasks as They Complete
+
+- Standard .NET collections aren't thread-safe.
+  Thread-safe collections should be used when working with collections on multiple threads
+- Data can be processed on the fly as subsequent tasks are completed
+
+```cs
+var loadingTasks = new List<Task>();
+var stocks = new ConcurrentBag<StockPrice>();
+
+foreach (string id in ids)
+{
+    var loadTask = service.GetStockPricesFor(id, cts.Token)
+        .ContinueWith(completedTask =>
+        {
+            foreach (var stock in completedTask.Result)
+                stocks.Add(stock);
+            
+            UpdateStocksUi(stocks);
+        }, 
+        TaskContinuationOptions.OnlyOnRanToCompletion);
+
+    loadingTasks.Add(loadTask);
+}
+
+await Task.WhenAll(loadingTasks);
+```
+
+# 4.5. Execution Context and Controlling the Continuation
+
+- For reasons like performance or context switching, there isn't always a need to return to the original context,
+  when running the code in the continuations
+- `Task.ConfigureAwait`:
+  - Configures method how the continuation should execute.
+  - It can be configured with `ConfigureAwait(false)` to continue on the new thread.
+    Each method marked with `async` has its own asynchronous context, therefore
+    it only affects the continuation in the method that you are operating in.
+  - No code after `ConfigureAwait(false)` should require the original context.
+  - `ConfigureAwait(false)` means, that there is no continuation enqueue on a thread pool.
+    It's quicker than waiting for another thread to be available.
+
+```cs
+private async Task Method1()
+{
+    // Thread 1
+    await Method2();
+    // Thread 1 (marshaled back)
+}
+
+private async Task Method2()
+{
+    // Thread 1
+    await Task.Run(() => { })
+        .ConfigureAwait(false);
+    // Thread 2
+    // Continue on new thread
+}
+```
+
+# 4.6. ConfigureAwait in ASP.NET
+
+- ASP.NET Core doesn't use synchronization context, thus making `ConfigureAwait(false)` is useless
+- `ConfigureAwait(false)` should be used in libraries, because the library can be used by any type of application
+
+# 5.2. Asynchronous Streams and Disposables
+
+- Allows for asynchronous retrieval of each item
+- `IAsyncEnumerable<T>` exposes an enumerator that provides asynchronous iteration
+- No need to return `Task` if method is `async`
+- Method must `yield return`
+- `async` + `IAsyncEnumerable<T>` = asynchronous enumeration
+- Using `yield return` with `IAsyncEnumerable<T>` signals to the iterator using this enumerator that it has an item to process
+- `IAsyncEnumerable<T>` can't be awaited, because it's an enumeration
+- `await foreach`: 
+  - Is used to asynchronously retrieve the data
+  - It awaits each item in the enumeration
+  - `foreach` body then is a continuation of each enumeration
+
+- Producing a stream:
+
+```cs
+public async IAsyncEnumerable<StockPrice> GetAllStockPrices(CancellationToken ct = default)
+{
+    await Task.Delay(50, ct); // fake delay
+    yield return new StockPrice() { Identifier = "TEST" };
+}
+```
+
+- Consuming a stream:
+
+```cs
+await foreach (var stock in enumerator)
+{
+
+}
+```
+
+================================================================================================
 
 # Questions / TODO
 
@@ -587,6 +706,12 @@ void Search_Click(...)
   ```
 
 1. Check `CancellationTokenSource.Dispose`
+
+1. Standard .NET collections aren't thread-safe, try to break few and check what happens
+
+1. What happens if `Task.WhenAny` returns the first completed task and the next task throws an exception?
+
+1. Explore the benefits of `ConfigureAwait(false)`
 
 1. Is async method with no await started like Task.Run?
 

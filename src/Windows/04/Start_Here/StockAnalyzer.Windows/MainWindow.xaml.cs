@@ -1,43 +1,56 @@
-﻿using Newtonsoft.Json;
-using StockAnalyzer.Core;
-using StockAnalyzer.Core.Domain;
-using StockAnalyzer.Core.Services;
-using System;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Navigation;
+using StockAnalyzer.Core;
+using StockAnalyzer.Core.Domain;
+using StockAnalyzer.Core.Services;
 
 namespace StockAnalyzer.Windows;
 
 public partial class MainWindow : Window
 {
     private static string API_URL = "https://ps-async.fekberg.com/api/stocks";
-    private Stopwatch stopwatch = new Stopwatch();
+    private readonly Stopwatch stopwatch = new();
+
+
+    private CancellationTokenSource? cancellationTokenSource;
 
     public MainWindow()
     {
         InitializeComponent();
     }
 
-
-    CancellationTokenSource? cancellationTokenSource;
+    
+    private async Task Method1()
+    {
+        // Thread 1
+        await Method2();
+        // Thread 1
+    }
+    
+    private async Task Method2()
+    {
+        // Thread 1
+        await Task.Run(() => { })
+            .ConfigureAwait(false);
+        // Thread 2
+    }
 
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
-        if (cancellationTokenSource is not null)
+        if (cancellationTokenSource != null)
         {
             // Already have an instance of the cancellation token source?
             // This means the button has already been pressed!
 
             cancellationTokenSource.Cancel();
-            cancellationTokenSource.Dispose();
             cancellationTokenSource = null;
 
             Search.Content = "Search";
@@ -47,41 +60,37 @@ public partial class MainWindow : Window
         try
         {
             cancellationTokenSource = new CancellationTokenSource();
-            cancellationTokenSource.CancelAfter(2000);
-
-            cancellationTokenSource.Token.Register(() => {
-                Notes.Text = "Cancellation requested";
-            });
-
+            cancellationTokenSource.Token.Register(() => { Notes.Text = "Cancellation requested"; });
             Search.Content = "Cancel"; // Button text
 
+
             BeforeLoadingStockData();
-            
-            string[] identifiers = StockIdentifier.Text
+
+            string[] ids = StockIdentifier.Text
                 .Split(',', ' ');
-            
+
             var service = new StockService();
 
-            var loadingTasks = new List<Task<IEnumerable<StockPrice>>>();
-            
-            foreach (string identifier in identifiers)
+            var loadingTasks = new List<Task>();
+            var stocks = new ConcurrentBag<StockPrice>();
+
+            foreach (string id in ids)
             {
-                var loadTask = service.GetStockPricesFor(identifier, cancellationTokenSource.Token);
+                var loadTask = service.GetStockPricesFor(id, cancellationTokenSource.Token)
+                    .ContinueWith(completedTask =>
+                    {
+                        foreach (var stock in completedTask.Result)
+                        {
+                            stocks.Add(stock);
+                        }
+
+                        UpdateStocksUi(stocks);
+                    }, TaskContinuationOptions.OnlyOnRanToCompletion);
+
                 loadingTasks.Add(loadTask);
             }
-
-            var timeoutTask = Task.Delay(2000);
-            var loadAllStocksAtOnceTask = Task.WhenAll(loadingTasks);
-
-            var firstCompletedTask = await Task.WhenAny(loadAllStocksAtOnceTask, timeoutTask);
-
-            if (firstCompletedTask == timeoutTask)
-            {
-                cancellationTokenSource.Cancel();
-                throw new OperationCanceledException("Loading timeout");
-            }
             
-            Stocks.ItemsSource = loadAllStocksAtOnceTask.Result.SelectMany(x => x);
+            await Task.WhenAll(loadingTasks);
         }
         catch (Exception ex)
         {
@@ -90,26 +99,20 @@ public partial class MainWindow : Window
         finally
         {
             AfterLoadingStockData();
-            cancellationTokenSource?.Dispose();
-            cancellationTokenSource = null;
 
+            cancellationTokenSource = null;
             Search.Content = "Search";
         }
     }
 
-
-
-
-
-
-
-
-
-
+    private void UpdateStocksUi(ConcurrentBag<StockPrice> stocks)
+    {
+        Dispatcher.Invoke(() => { Stocks.ItemsSource = stocks.ToArray(); });
+    }
 
 
     private static Task<List<string>> SearchForStocks(
-        CancellationToken cancellationToken    
+        CancellationToken cancellationToken
     )
     {
         return Task.Run(async () =>
@@ -120,10 +123,7 @@ public partial class MainWindow : Window
 
             while (await stream.ReadLineAsync() is string line)
             {
-                if(cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                if (cancellationToken.IsCancellationRequested) break;
                 lines.Add(line);
             }
 
@@ -133,32 +133,12 @@ public partial class MainWindow : Window
 
     private async Task GetStocks()
     {
-        try
-        {
-            var store = new DataStore();
+        var store = new DataStore();
 
-            var responseTask = store.GetStockPrices(StockIdentifier.Text);
+        var responseTask = store.GetStockPrices(StockIdentifier.Text);
 
-            Stocks.ItemsSource = await responseTask;
-        }
-        catch (Exception ex)
-        {
-            throw;
-        }
+        Stocks.ItemsSource = await responseTask;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     private void BeforeLoadingStockData()
