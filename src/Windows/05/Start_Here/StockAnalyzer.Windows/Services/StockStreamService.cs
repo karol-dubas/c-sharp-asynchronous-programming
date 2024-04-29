@@ -29,7 +29,7 @@ public class MockStockStreamService : IStockStreamService
     }
 }
 
-public class DiskStockStreamService : IStockStreamService
+public class DiskStockStreamService : IStockStreamService, IAsyncDisposable
 {
     public async IAsyncEnumerable<StockPrice> GetAllStockPrices(
         [EnumeratorCancellation] CancellationToken ct = default)
@@ -41,5 +41,10 @@ public class DiskStockStreamService : IStockStreamService
         {
             yield return StockPrice.FromCSV(line);
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // ... 
     }
 }

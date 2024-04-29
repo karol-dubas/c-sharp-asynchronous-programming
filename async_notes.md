@@ -572,9 +572,9 @@ private async Task Method2()
 
 # 5.2. Asynchronous Streams and Disposables
 
-- Allows for asynchronous retrieval of each item
+- Allows for asynchronous retrieval of each item as it arrives to the application
 - `IAsyncEnumerable<T>` exposes an enumerator that provides asynchronous iteration
-- No need to return `Task` if method is `async`
+- No need to return a `Task` if method is `async`
 - Method must `yield return`
 - `async` + `IAsyncEnumerable<T>` = asynchronous enumeration
 - Using `yield return` with `IAsyncEnumerable<T>` signals to the iterator using this enumerator that it has an item to process
@@ -582,7 +582,7 @@ private async Task Method2()
 - `await foreach`: 
   - Is used to asynchronously retrieve the data
   - It awaits each item in the enumeration
-  - `foreach` body then is a continuation of each enumeration
+  - `foreach` body is a continuation of each enumeration
 
 - Producing a stream:
 
@@ -597,11 +597,215 @@ public async IAsyncEnumerable<StockPrice> GetAllStockPrices(CancellationToken ct
 - Consuming a stream:
 
 ```cs
-await foreach (var stock in enumerator)
-{
+await foreach (var stock in enumerator) { }
+```
 
+- `EnumeratorCancellationAttribute` is used with `IAsyncEnumerable<T>.WithCancellation`
+
+```cs
+public async IAsyncEnumerable<Stock> GetStocks([EnumeratorCancellation] CancellationToken ct = default) { }
+
+//...
+
+var enumerator = service.GetStocks();
+await foreach (var stock in enumerator.WithCancellation(cts.Token)) {}
+```
+
+- Resources can be cleaned up asynchronously bo implementing `IAsyncDisposable` and `await using`
+
+```cs
+public class StockStreamService : IAsyncDisposable
+{
+    // ...
+
+    public async ValueTask DisposeAsync()
+    {
+        // ... 
+    }
+}
+
+await using var service = new StockStreamService();
+```
+
+# 5.3. The Implications of Async and Await
+
+- Using `async` keyword generates a bit of code and introduces a state machine
+- State machine is generated for every `async` method
+- State machine allows for:
+  - Keeping track of tasks
+  - Executes the continuation
+  - Provides potential result
+  - Handles context switching - ensures that the contination executes on the correct context
+  - Handles exceptions
+
+- Not `async` method:
+
+```cs
+private void Method() => Console.WriteLine("Sample text"); 
+```
+
+is compiled to:
+
+```cs
+private void Method()
+{
+    Console.WriteLine("Sample text");
 }
 ```
+
+No changes there, but method with `async` 
+
+```cs
+private async void Method() => Console.WriteLine("Sample text"); 
+```
+
+is compiled into:
+
+```cs
+[AsyncStateMachine((Type) typeof(<Method>d__5)), DebuggerStepThrough]
+private void Method()
+{
+    <Method>d__5 stateMachine = new <Method>d__5 
+    {
+        <>t__builder = AsyncVoidMethodBuilder.Create(),
+        <>4__this = this,
+        <>1__state = -1
+    };
+    stateMachine.<>t__builder.Start<<Method>d__5>(ref stateMachine);
+}
+
+// This is a concrete implementation that is responsible for running the code (used above)
+[CompilerGenerated]
+private sealed class <Method>d__5 : IAsyncStateMachine
+{
+    // Fields
+    public int <>1__state;
+    public AsyncVoidMethodBuilder <>t__builder;
+    public MainWindow <>4__this;
+
+    // Methods
+    private void MoveNext()
+    {
+        int num = this.<>1__state;
+        try
+        {
+            Console.WriteLine("Sample text"); // here is the code defined in Method
+        }
+        catch (Exception exception)
+        {
+            this.<>1__state = -2;
+            // AsyncVoidMethodBuilder btw tries to set the exception, but there is no Task to set it on
+            this.<>t__builder.SetException(exception);
+            return;
+        }
+        this.<>1__state = -2;
+        this.<>t__builder.SetResult();
+    }
+
+    [DebuggerHidden]
+    private void SetStateMachine([Nullable(1)] IAsyncStateMachine stateMachine)
+    {
+    }
+}
+```
+
+This whole code is executed on the caller thread. Nothing has been offloaded to a different thread yet.
+
+- `async Task` method uses different builder and returns a `Task` object
+
+```cs
+private async Task Foo()
+{
+    string result = await Task.Run(() => "Hello");
+    Console.WriteLine("World");
+}
+```
+
+is compiled into:
+
+```cs
+[NullableContext(1), AsyncStateMachine((Type) typeof(<Foo>d__6)), DebuggerStepThrough]
+private Task Foo()
+{
+    <Foo>d__6 stateMachine = new <Foo>d__6 
+    {
+        <>t__builder = AsyncTaskMethodBuilder.Create(),
+        <>4__this = this,
+        <>1__state = -1
+    };
+    stateMachine.<>t__builder.Start<<Foo>d__6>(ref stateMachine);
+    return stateMachine.<>t__builder.get_Task();
+}
+
+[CompilerGenerated]
+private sealed class <Foo>d__6 : IAsyncStateMachine
+{
+    // Fields
+    public int <>1__state;
+    public AsyncTaskMethodBuilder <>t__builder;
+    public MainWindow <>4__this;
+    private string <result>5__1;
+    private string <>s__2;
+    private TaskAwaiter<string> <>u__1;
+
+    // Methods
+    private void MoveNext()
+    {
+        int num = this.<>1__state;
+        try
+        {
+            TaskAwaiter<string> awaiter;
+            if (num == 0)
+            {
+                awaiter = this.<>u__1;
+                this.<>u__1 = new TaskAwaiter<string>();
+                this.<>1__state = num = -1;
+                goto TR_0004;
+            }
+            else
+            {
+                awaiter = Task.Run<string>(MainWindow.<>c.<>9__6_0 ??= new Func<string>(this.<Foo>b__6_0)).GetAwaiter();
+                if (awaiter.IsCompleted)
+                {
+                    goto TR_0004;
+                }
+                else
+                {
+                    this.<>1__state = num = 0;
+                    this.<>u__1 = awaiter;
+                    MainWindow.<Foo>d__6 stateMachine = this;
+                    this.<>t__builder.AwaitUnsafeOnCompleted<TaskAwaiter<string>, MainWindow.<Foo>d__6>(ref awaiter, ref stateMachine);
+                }
+            }
+            return;
+        TR_0004:
+            this.<>s__2 = awaiter.GetResult();
+            this.<result>5__1 = this.<>s__2;
+            this.<>s__2 = null;
+            Console.WriteLine("World");
+            this.<>1__state = -2;
+            this.<result>5__1 = null;
+            this.<>t__builder.SetResult();
+        }
+        catch (Exception exception)
+        {
+            this.<>1__state = -2;
+            this.<result>5__1 = null;
+            this.<>t__builder.SetException(exception);
+        }
+    }
+
+    [DebuggerHidden]
+    private void SetStateMachine([Nullable(1)] IAsyncStateMachine stateMachine)
+    {
+    }
+}
+
+ 
+
+```
+
+Now state machine keeps track of the current state and has an awaiter to keep track of current ongoing operations to know if it's completed
 
 ================================================================================================
 
@@ -737,4 +941,10 @@ async Task StartBackgroundService(CancellationToken ct)
     }
     catch (TaskCanceledException) { }
 }
+```
+
+1. Are all continuations running on the same new thread?
+
+```cs
+await foreach (var stock in enumerator) {}
 ```

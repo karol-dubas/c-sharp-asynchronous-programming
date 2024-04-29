@@ -45,10 +45,9 @@ public partial class MainWindow : Window
             var data = new ObservableCollection<StockPrice>();
             Stocks.ItemsSource = data;
 
-            var service = new DiskStockStreamService();
+            await using var service = new DiskStockStreamService();
             var enumerator = service.GetAllStockPrices();
 
-            // TODO: are all continuations running on the same new thread?
             await foreach (var stock in enumerator.WithCancellation(cts.Token))
             {
                 if (identifiers.Contains(stock.Identifier))
@@ -63,6 +62,17 @@ public partial class MainWindow : Window
         {
             AfterLoadingStockData();
         }
+    }
+
+    private async void Method()
+    {
+        await Foo();
+    }
+
+    private async Task Foo()
+    {
+        string result = await Task.Run(() => "Hello");
+        Console.WriteLine("World");
     }
 
 
