@@ -22,7 +22,7 @@ public class StockService : IStockService
 
     public async Task<IEnumerable<StockPrice>>
         GetStockPricesFor(string stockIdentifier,
-                          CancellationToken cancellationToken)
+                          CancellationToken cancellationToken = default)
     {
         // Simulate that each time this method is called
         // it takes a little bit longer.

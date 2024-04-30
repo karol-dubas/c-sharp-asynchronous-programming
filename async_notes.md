@@ -572,31 +572,28 @@ private async Task Method2()
 
 # 5.2. Asynchronous Streams and Disposables
 
-- Allows for asynchronous retrieval of each item as it arrives to the application
-- `IAsyncEnumerable<T>` exposes an enumerator that provides asynchronous iteration
-- No need to return a `Task` if method is `async`
-- Method must `yield return`
-- `async` + `IAsyncEnumerable<T>` = asynchronous enumeration
-- Using `yield return` with `IAsyncEnumerable<T>` signals to the iterator using this enumerator that it has an item to process
-- `IAsyncEnumerable<T>` can't be awaited, because it's an enumeration
-- `await foreach`: 
-  - Is used to asynchronously retrieve the data
-  - It awaits each item in the enumeration
-  - `foreach` body is a continuation of each enumeration
-
-- Producing a stream:
+- `IAsyncEnumerable<T>`:
+  - Allows for asynchronous retrieval of each item as it arrives to the application
+  - Exposes an enumerator that provides asynchronous iteration
+  - No need to return a `Task` if method is `async`
+  - Method must `yield return`
+  - Using `yield return` with `IAsyncEnumerable<T>` signals to the iterator using this enumerator that it has an item to process
+  - `async IAsyncEnumerable<T>` metho can't be awaited, because it's an enumeration
+  - `await foreach`: 
+    - Is used to asynchronously retrieve the data
+    - It awaits each item in the enumeration
+    - `foreach` body is a continuation of each enumeration
 
 ```cs
-public async IAsyncEnumerable<StockPrice> GetAllStockPrices(CancellationToken ct = default)
+// Producing a stream
+public async IAsyncEnumerable<StockPrice> GetStocks(CancellationToken ct = default)
 {
     await Task.Delay(50, ct); // fake delay
     yield return new StockPrice() { Identifier = "TEST" };
 }
-```
 
-- Consuming a stream:
-
-```cs
+// Consuming a stream
+var enumerator = service.GetStocks();
 await foreach (var stock in enumerator) { }
 ```
 
@@ -644,7 +641,7 @@ await using var service = new StockStreamService();
 private void Method() => Console.WriteLine("Sample text"); 
 ```
 
-is compiled to:
+is compiled into:
 
 ```cs
 private void Method()
@@ -711,7 +708,7 @@ private sealed class <Method>d__5 : IAsyncStateMachine
 
 This whole code is executed on the caller thread. Nothing has been offloaded to a different thread yet.
 
-- `async Task` method uses different builder and returns a `Task` object
+- `async Task` method uses different builder and returns a `Task` object:
 
 ```cs
 private async Task Foo()
@@ -782,7 +779,7 @@ private sealed class <Foo>d__6 : IAsyncStateMachine
             this.<>s__2 = awaiter.GetResult();
             this.<result>5__1 = this.<>s__2;
             this.<>s__2 = null;
-            Console.WriteLine("World");
+            Console.WriteLine("World"); // continuation
             this.<>1__state = -2;
             this.<result>5__1 = null;
             this.<>t__builder.SetResult();
@@ -800,12 +797,106 @@ private sealed class <Foo>d__6 : IAsyncStateMachine
     {
     }
 }
-
- 
-
 ```
 
-Now state machine keeps track of the current state and has an awaiter to keep track of current ongoing operations to know if it's completed
+Now state machine keeps track of the current state and has an awaiter to keep track of current ongoing operations,
+to know if it's completed
+
+# 5.4. Reducing the Amount of State Machines
+
+All the methods using `await` and `async` keywords validate that the method it's calling completed successfully.
+Methods below are waiting for a result, and this means that each of them will have a generated state machine code.
+
+```cs
+private async Task<string> Method1()
+{
+    return await Method2();
+}
+
+private async Task<string> Method2()
+{
+    return await Method3();
+}
+
+private async Task<string> Method3()
+{
+    return await Task.Run(() => "Hello");
+}
+```
+
+There is no continuation in these methods, so to keep amount of generated code to a minimum, we can skip `async` & `await`. 
+If the caller has the opportunity to await `Task`, then is should do so. Asynchronous operation should be awaited at the top level. It also reduces potential errors.
+
+```cs
+private async Task<string> Method1()
+{
+    return await Method2();
+}
+
+private Task<string> Method2()
+{
+    return Method3();
+}
+
+private Task<string> Method3()
+{
+    return Task.Run(() => "Hello");
+}
+```
+
+# 5.5 - Deadlocking
+
+A deadlock occurs if 2 threads depend on each other and one of them is blocked.
+`Task` has a method `Wait` which will block the current thread until the data for the task is available.
+
+```cs
+private void Search_Click(...)
+{
+    var task = Task.Run(() =>
+    {
+        // Update UI (communicate with the original thread)
+        Dispatcher.Invoke(() => { });
+    });
+    
+    // Wait = block UI thread until all processing has completed,
+    // but it can't complete, bacause it can't communicate back
+    task.Wait();
+}
+```
+UI thread waits for a thread to complete and this thread cannot complete unless it can communicate back to the UI thread.
+
+Another deadlock with `Wait`:
+
+```cs
+private void Search_Click(...)
+{
+    LoadStocks().Wait(); // Deadlock, no await
+}
+
+private async Task LoadStocks()
+{
+    // Load data...
+    Stocks.ItemsSource = data.SelectMany(x => x);
+}
+```
+
+Deadlock with `Result`:
+
+```cs
+private void Search_Click(...)
+{
+    Stocks.ItemsSource = LoadStocks().Result; // Deadlock, no await
+}
+
+private async Task<IEnumerable<StockPrice>> LoadStocks()
+{
+    // Load data...
+    return data.SelectMany(x => x);
+}
+```
+
+The state machine with the code inside runs on the same thread (UI in this case) and it can't be executed, because this thread is blocked.
+Asynchronous operation can't communicate to the state machine when it completes.
 
 ================================================================================================
 

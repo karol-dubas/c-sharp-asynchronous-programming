@@ -29,100 +29,82 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-
-    CancellationTokenSource? cts;
-
-    private async void Search_Click(object sender, RoutedEventArgs e)
+    // private async void Search_Click(object sender, RoutedEventArgs e)
+    // {
+    //     try
+    //     {
+    //         BeforeLoadingStockData();
+    //
+    //         string[] identifiers = StockIdentifier.Text.Split(' ', ',');
+    //         
+    //         var data = new ObservableCollection<StockPrice>();
+    //         Stocks.ItemsSource = data;
+    //
+    //         await using var service = new DiskStockStreamService();
+    //         var enumerator = service.GetAllStockPrices();
+    //
+    //         await foreach (var stock in enumerator.WithCancellation(cts.Token))
+    //         {
+    //             if (identifiers.Contains(stock.Identifier))
+    //                 data.Add(stock);
+    //         }
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         Notes.Text = ex.Message;
+    //     }
+    //     finally
+    //     {
+    //         AfterLoadingStockData();
+    //     }
+    // }
+    
+    
+    
+    
+    
+    private async void Search_Click2(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            cts = new(); // useless now
-            
-            BeforeLoadingStockData();
+        var data = await LoadStocks();
+        Stocks.ItemsSource = data;
+    }
+    
+    private void Search_Click(object sender, RoutedEventArgs e)
+    {
+        // var data = LoadStocks().Result;
+        // Stocks.ItemsSource = data;
 
-            string[] identifiers = StockIdentifier.Text.Split(' ', ',');
-            
-            var data = new ObservableCollection<StockPrice>();
-            Stocks.ItemsSource = data;
-
-            await using var service = new DiskStockStreamService();
-            var enumerator = service.GetAllStockPrices();
-
-            await foreach (var stock in enumerator.WithCancellation(cts.Token))
-            {
-                if (identifiers.Contains(stock.Identifier))
-                    data.Add(stock);
-            }
-        }
-        catch (Exception ex)
+        var task = Task.Run(() =>
         {
-            Notes.Text = ex.Message;
-        }
-        finally
-        {
-            AfterLoadingStockData();
-        }
+            Dispatcher.Invoke(() => { });
+        });
+        
+        task.Wait();
     }
 
-    private async void Method()
-    {
-        await Foo();
-    }
-
-    private async Task Foo()
-    {
-        string result = await Task.Run(() => "Hello");
-        Console.WriteLine("World");
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    private async Task<IEnumerable<StockPrice>>
-        GetStocksFor(string identifier)
+    private async Task<IEnumerable<StockPrice>> LoadStocks()
     {
         var service = new StockService();
-        var data = await service.GetStockPricesFor(identifier,
-            CancellationToken.None).ConfigureAwait(false);
+        var loadingTasks = new List<Task<IEnumerable<StockPrice>>>();
 
-        
-
-        return data.Take(5);
-    }
-
-    private static Task<List<string>> SearchForStocks(
-        CancellationToken cancellationToken    
-    )
-    {
-        return Task.Run(async () =>
+        foreach (string id in StockIdentifier.Text.Split(' ', ','))
         {
-            using var stream = new StreamReader(File.OpenRead("StockPrices_Small.csv"));
-
-            var lines = new List<string>();
-
-            while (await stream.ReadLineAsync() is string line)
-            {
-                if(cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                lines.Add(line);
-            }
-
-            return lines;
-        }, cancellationToken);
+            var loadTask = service.GetStockPricesFor(id);
+            loadingTasks.Add(loadTask);
+        }
+  
+        var data = await Task.WhenAll(loadingTasks);
+        return data.SelectMany(x => x);
     }
 
+    
+    
+    
+    
+    
+    
+    
+    
     private async Task GetStocks()
     {
         try
@@ -138,20 +120,6 @@ public partial class MainWindow : Window
             throw;
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     private void BeforeLoadingStockData()
     {
