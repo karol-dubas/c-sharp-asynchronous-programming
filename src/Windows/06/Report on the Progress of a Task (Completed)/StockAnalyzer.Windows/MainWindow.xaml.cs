@@ -24,16 +24,13 @@ public partial class MainWindow : Window
 {
     private static string API_URL = "https://ps-async.fekberg.com/api/stocks";
     private Stopwatch stopwatch = new Stopwatch();
+    CancellationTokenSource? cancellationTokenSource;
 
     public MainWindow()
     {
         InitializeComponent();
     }
-
-
-    CancellationTokenSource? cancellationTokenSource;
-
-
+    
     private async void Search_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -57,8 +54,7 @@ public partial class MainWindow : Window
             AfterLoadingStockData();
         }
     }
-
-
+    
     private async Task SearchForStocks(
         IProgress<IEnumerable<StockPrice>> progress)
     {
@@ -83,38 +79,6 @@ public partial class MainWindow : Window
 
         Stocks.ItemsSource = data.SelectMany(stock => stock);
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     private async Task<IEnumerable<StockPrice>>
         GetStocksFor(string identifier)
@@ -164,20 +128,6 @@ public partial class MainWindow : Window
             throw;
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     private void BeforeLoadingStockData()
     {

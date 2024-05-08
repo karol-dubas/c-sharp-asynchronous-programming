@@ -859,7 +859,7 @@ private void Search_Click(...)
     });
     
     // Wait = block UI thread until all processing has completed,
-    // but it can't complete, bacause it can't communicate back
+    // but it can't completed, bacause it can't communicate back
     task.Wait();
 }
 ```
@@ -897,6 +897,59 @@ private async Task<IEnumerable<StockPrice>> LoadStocks()
 
 The state machine with the code inside runs on the same thread (UI in this case) and it can't be executed, because this thread is blocked.
 Asynchronous operation can't communicate to the state machine when it completes.
+
+# 6.2. Report on the Progress of a Task
+
+`Progress<T>` provides `IProgress<T>` that invokes callbacks for each reported value with `IProgress<T>.Report`.
+`Progress<T>.ProgressChanged` event is raised every report on the calling context.
+Passing `Progress<T>` object to another thread will use synchronization context, like awaiter when communicating back to the original context.
+
+# 6.3. Using Task Completion Source
+
+In C#, there are several options for performing parallel operations.
+
+## Event-based asynchronous pattern
+
+We can subscribe to an event that indicates when the operation is completed. The latest one is the TPL.
+
+```cs
+var worker = new BackgroundWorker();
+
+worker.DoWork += (sender, e) =>
+{
+    // Runs on a different thread
+    Dispatcher.Invoke(() => Notes.Text += $"Worker DoWork");
+};
+
+worker.RunWorkerCompleted += (sender, e) =>
+{
+    // Triggered when work is done  
+    Notes.Text += $"Worker completed";
+};
+
+worker.RunWorkerAsync();
+```
+
+## Manual ThreadPool enqueue 
+
+It can't be awaited.
+
+```cs
+ThreadPool.QueueUserWorkItem(_ =>
+{
+    // Run on a different thread
+    Dispatcher.Invoke(() => Notes.Text += $"ThreadPool work item");
+});
+```
+
+## TaskCompletionSource
+
+- For old, legacy code to create awaitable `Task`
+- `TaskCompletionSource<T>` is for consuming a parallel or async operations without any TPL,
+  that means `Task` isn't exposed, so no `async` & `await` keywords can be used
+- Creates a `Task` which could be reutrned or awaited
+- `TaskCompletionSource<T>.Task` doens't run anything itself,
+  it is marked as completed when it gets the result set on it, so it means it can be awaited
 
 ================================================================================================
 

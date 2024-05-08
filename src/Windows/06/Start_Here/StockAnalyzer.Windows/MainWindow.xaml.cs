@@ -1,133 +1,96 @@
-﻿using Newtonsoft.Json;
-using StockAnalyzer.Core;
-using StockAnalyzer.Core.Domain;
-using StockAnalyzer.Core.Services;
-using StockAnalyzer.Windows.Services;
-using System;
-using System.Collections.Concurrent;
+﻿using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Navigation;
+using StockAnalyzer.Core.Domain;
+using StockAnalyzer.Core.Services;
 
 namespace StockAnalyzer.Windows;
 
 public partial class MainWindow : Window
 {
     private static string API_URL = "https://ps-async.fekberg.com/api/stocks";
-    private Stopwatch stopwatch = new Stopwatch();
+    private readonly Stopwatch stopwatch = new();
 
     public MainWindow()
     {
         InitializeComponent();
     }
 
+    private void Test_Click(object sender, RoutedEventArgs e)
+    {
+        var worker = new BackgroundWorker();
+        
+        worker.DoWork += (sender, e) =>
+        {
+            // Runs on a different thread
+            Dispatcher.Invoke(() => Notes.Text += $"Worker DoWork{Environment.NewLine}");
+        };
+        
+        worker.RunWorkerCompleted += (sender, e) =>
+        {
+            // Triggered when work is done  
+            Notes.Text += $"Worker completed{Environment.NewLine}";
+        };
+        
+        worker.RunWorkerAsync();
+        
+        // -------
 
-    CancellationTokenSource? cancellationTokenSource;
-
-    private void Search_Click(object sender, RoutedEventArgs e)
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            // Run on a different thread
+            Dispatcher.Invoke(() => Notes.Text += $"ThreadPool work item{Environment.NewLine}");
+        });
+    }
+    
+    private async void Search_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            // NEVER DO THIS!
-            Task.Run(SearchForStocks).Wait();
+            BeforeLoadingStockData();
+
+            var data = await SearchForStocks();
+
+            Stocks.ItemsSource = data.Where(price =>
+                price.Identifier == StockIdentifier.Text);
         }
         catch(Exception ex)
         {
             Notes.Text = ex.Message;
         }
-    }
-
-    private async Task SearchForStocks()
-    {
-        var service = new StockService();
-        var loadingTasks = new List<Task<IEnumerable<StockPrice>>>();
-
-        foreach(var identifier in StockIdentifier.Text.Split(' ', ','))
+        finally
         {
-            var loadTask = service.GetStockPricesFor(identifier,
-                CancellationToken.None);
-
-            loadingTasks.Add(loadTask);
+            AfterLoadingStockData();
         }
-
-        var data = await Task.WhenAll(loadingTasks);
-
-        Stocks.ItemsSource = data.SelectMany(stock => stock);
     }
 
-
-    private async Task<IEnumerable<StockPrice>>
-        GetStocksFor(string identifier)
+    private Task<IEnumerable<StockPrice>> SearchForStocks()
     {
-        var service = new StockService();
-        var data = await service.GetStockPricesFor(identifier,
-            CancellationToken.None).ConfigureAwait(false);
+        var tcs = new TaskCompletionSource<IEnumerable<StockPrice>>();
+        
+        ThreadPool.QueueUserWorkItem(_ => {
+            var lines = File.ReadAllLines("StockPrices_Small.csv");
+            var prices = new List<StockPrice>();
 
-        return data.Take(5);
-    }
-
-    private static Task<List<string>> SearchForStocks(
-        CancellationToken cancellationToken    
-    )
-    {
-        return Task.Run(async () =>
-        {
-            using var stream = new StreamReader(File.OpenRead("StockPrices_Small.csv"));
-
-            var lines = new List<string>();
-
-            while (await stream.ReadLineAsync() is string line)
+            foreach(var line in lines.Skip(1))
             {
-                if(cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                lines.Add(line);
+                prices.Add(StockPrice.FromCSV(line));
             }
 
-            return lines;
-        }, cancellationToken);
+            // Sets Task status to RanToCompletion with result
+            tcs.SetResult(prices);
+        });
+
+        return tcs.Task;
     }
-
-    private async Task GetStocks()
-    {
-        try
-        {
-            var store = new DataStore();
-
-            var responseTask = store.GetStockPrices(StockIdentifier.Text);
-
-            Stocks.ItemsSource = await responseTask;
-        }
-        catch (Exception ex)
-        {
-            throw;
-        }
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    
     private void BeforeLoadingStockData()
     {
         stopwatch.Restart();
@@ -152,4 +115,6 @@ public partial class MainWindow : Window
     {
         Application.Current.Shutdown();
     }
+
+
 }
