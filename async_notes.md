@@ -1,3 +1,5 @@
+================================================================================================
+
 # 2.4 - Introducing async and await
 
 ## Asynchronous programming
@@ -906,11 +908,11 @@ Passing `Progress<T>` object to another thread will use synchronization context,
 
 # 6.3. Using Task Completion Source
 
-In C#, there are several options for performing parallel operations.
+In C#, there are several options for performing parallel operations. The latest one is the TPL approach.
 
 ## Event-based asynchronous pattern
 
-We can subscribe to an event that indicates when the operation is completed. The latest one is the TPL.
+We can subscribe to events that indicate when the operations are completed.
 
 ```cs
 var worker = new BackgroundWorker();
@@ -918,7 +920,7 @@ var worker = new BackgroundWorker();
 worker.DoWork += (sender, e) =>
 {
     // Runs on a different thread
-    Dispatcher.Invoke(() => Notes.Text += $"Worker DoWork");
+    Dispatcher.Invoke(() => Notes.Text += $"Worker DoWork\n");
 };
 
 worker.RunWorkerCompleted += (sender, e) =>
@@ -944,14 +946,147 @@ ThreadPool.QueueUserWorkItem(_ =>
 
 ## TaskCompletionSource
 
-- For old, legacy code to create awaitable `Task`
-- `TaskCompletionSource<T>` is for consuming a parallel or async operations without any TPL,
-  that means `Task` isn't exposed, so no `async` & `await` keywords can be used
+- Used for old, legacy code to create awaitable `Task`
+- `TaskCompletionSource<T>` is for consuming a parallel or async operations different than TPL approach,
+  where `Task` isn't exposed, so no `async` & `await` keywords can be used
 - Creates a `Task` which could be reutrned or awaited
 - `TaskCompletionSource<T>.Task` doens't run anything itself,
   it is marked as completed when it gets the result set on it, so it means it can be awaited
 
+# 6.4. Working with Attached and Detached Tasks
+
+```cs
+Task.Run(() => // parent task
+{
+    Task.Run(() => { }); // child task
+    Task.Run(() => { }); // child task
+});
+```
+
+- `Task.Run` doesn't have `TaskContinuationOptions`, it's a shortcut of using the `Task.Factory`
+
+```cs
+Console.WriteLine("Starting");
+
+await Task.Factory.StartNew(() =>
+    {
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(1000);
+            Console.WriteLine("Completed 1");
+        });
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(2000);
+            Console.WriteLine("Completed 2");
+        });
+        
+        // Parent tasks immediately starts child tasks and it's marked as completed
+    });
+
+Console.WriteLine("Completed");
+```
+
+Result:
+```
+Starting
+Completed
+Completed 1
+Completed 2
+```
+
+Using `TaskCreationOptions.AttachedToParent`
+
+```cs
+Console.WriteLine("Starting");
+
+await Task.Factory.StartNew(() =>
+    {
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(1000);
+            Console.WriteLine("Completed 1");
+        }, TaskCreationOptions.AttachedToParent); // Attach to parent
+        
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(2000);
+            Console.WriteLine("Completed 2");
+        });
+    });
+
+Console.WriteLine("Completed");
+```
+
+Result:
+```
+Starting
+Completed 1
+Completed
+Completed 2
+```
+
+Using `TaskCreationOptions.DenyChildAttach`, which is default for `Task.Run`.
+All child tasks would work as detached tasks.
+
+```cs
+Console.WriteLine("Starting");
+
+await Task.Factory.StartNew(() =>
+    {
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(1000);
+            Console.WriteLine("Completed 1");
+        }, TaskCreationOptions.AttachedToParent);
+        
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(2000);
+            Console.WriteLine("Completed 2");
+        });
+    }, TaskCreationOptions.DenyChildAttach);
+
+Console.WriteLine("Completed");
+Console.ReadKey();
+```
+
+Result looks like default `Task.Factory.StartNew` call with no options:
+```
+Starting
+Completed
+Completed 1
+Completed 2
+```
+
 ================================================================================================
+
+# Asynchronous, parallel, concurrent programming
+
+## Concurrent & parallel
+
+Multitasking, solving problems "at the same time".
+
+### Concurrent
+
+Concurrent programming made it possible to solve the problem of multitasking when the first OS were created, even with only 1 CPU core.
+During concurrent programming, there is a context switching, that is imperceptible to humans (looks like parallelism).
+
+### Parallel
+
+CPU cores can perform operations independently, so with their use we can program in parallel.
+Used in the CPU bound scenarios to maximize performance.
+
+![Concurrency vs Parallelism](image.png)
+
+Both approaches can be used at the same time.
+
+## Asynchronous
+
+Used for I/O bound operations.
+
+================================================================================================
+
 
 # Questions / TODO
 
@@ -1092,3 +1227,7 @@ async Task StartBackgroundService(CancellationToken ct)
 ```cs
 await foreach (var stock in enumerator) {}
 ```
+
+1. `Thread.Sleep` vs `Task.Delay`
+
+1. `Task.Yield`

@@ -1,14 +1,19 @@
-﻿
-Console.WriteLine("Starting");
+﻿Console.WriteLine("Starting");
 
-var task = Task.Factory.StartNew(async () => {
-    await Task.Delay(2000);
-
-    return "Pluralsight";
-}).Unwrap();
-
-var result = await task;
+await Task.Factory.StartNew(() =>
+    {
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(1000);
+            Console.WriteLine("Completed 1");
+        }, TaskCreationOptions.AttachedToParent);
+        
+        Task.Factory.StartNew(() =>
+        {
+            Thread.Sleep(2000);
+            Console.WriteLine("Completed 2");
+        });
+    }, TaskCreationOptions.DenyChildAttach);
 
 Console.WriteLine("Completed");
-
-Console.ReadLine();
+Console.ReadKey();
