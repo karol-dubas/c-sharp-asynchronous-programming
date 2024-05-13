@@ -1083,10 +1083,21 @@ Both approaches can be used at the same time.
 
 ## Asynchronous
 
-Used for I/O bound operations.
+Used for I/O operations that are beyond the scope of the application and require processing time in an external program.
+After calling an I/O operation, we can wait for the result
+- blocking the resources until the result is returned
+- asynchronously, which doesn't block the resources.
+
+## Blocking (web server example)
+
+Synchronous web application with 1 CPU core during the request execution starts a new thread, if it performs synchronous operation, it will block the application.
+If application used by more than 1 user, concurrent programming with context switching is used to handle such requests (1 CPU core).
+web server has a thread pool with limited number of threads (that handle requests). By default it's `(CPU physical core number) x (number of threads that can be run on each core)`, so if the CPU has 6 cores and 2 threads on each, there will be 12 threads in the thread pool to use. When the number of available threads is exceeded, a thread throttling mechanism is used.
+The synchronous approach makes the thread in such an approach wait most of the time for the result and during this time it could perform other operations.
+
+![alt text](image-1.png)
 
 ================================================================================================
-
 
 # Questions / TODO
 
@@ -1231,3 +1242,10 @@ await foreach (var stock in enumerator) {}
 1. `Thread.Sleep` vs `Task.Delay`
 
 1. `Task.Yield`
+
+1. Locking with `lock` etc.
+
+================================================================================================
+
+[Filip Ekberg, Asynchronous Programming in C#](https://www.pluralsight.com/courses/c-sharp-10-asynchronous-programming)
+[DevMentors D. Pawlukiewicz, async/await (PL)](https://youtu.be/sCUFQ_VQszs)
