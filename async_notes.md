@@ -1088,14 +1088,76 @@ After calling an I/O operation, we can wait for the result
 - blocking the resources until the result is returned
 - asynchronously, which doesn't block the resources.
 
-## Blocking (web server example)
+# C# asynchronous patterns history
+
+APM - Asynchronous Programming Model
+EAP - Event-based Asynchronous Pattern
+TAP - Task-based Asynchronous Programming
+
+# Synchronous (blocking) web server example
 
 Synchronous web application with 1 CPU core during the request execution starts a new thread, if it performs synchronous operation, it will block the application.
 If application used by more than 1 user, concurrent programming with context switching is used to handle such requests (1 CPU core).
-web server has a thread pool with limited number of threads (that handle requests). By default it's `(CPU physical core number) x (number of threads that can be run on each core)`, so if the CPU has 6 cores and 2 threads on each, there will be 12 threads in the thread pool to use. When the number of available threads is exceeded, a thread throttling mechanism is used.
+Web server has a thread pool with limited number of threads (that handle requests). By default it's `(CPU physical core number) x (number of threads that can be run on each core)`, so if the CPU has 6 cores and 2 threads on each, there will be 12 threads in the thread pool to use. When the number of available threads is exceeded, a thread throttling mechanism is used.
 The synchronous approach makes the thread in such an approach wait most of the time for the result and during this time it could perform other operations.
 
+```cs
+app.MapGet("/sync", () =>
+{
+    Thread.Sleep(1000); // It waits most of the time, blocking the thread
+    return "Hello";
+});
+```
+
+Result is returned after 1s and thread handling that request is blocked.
+
+Load test results:
+
+```
+API sync load test scenario (5s timeout)
+    - requests: 188
+    - ok:       76      (p50 = 3022.85 ms, p75 = 3039.23 ms, p95 = 3993.6 ms, p99 = 4583.42 ms)
+    - fail:     112     (min > 5s)
+```
+
 ![alt text](image-1.png)
+
+# Asynchronous web server example
+
+Asynchronous programming can be impltemented on 1 thread, but doesn't require more than 1 core or 1 thread.
+
+In the asynchronous version as in the synchronous version - one thread is taken from the thread pool to handle the request, but instead of blocking the thread, while waiting for the result, it is returned to the thread pool and it can be resued by another request. Adter receiving the result continuation doens't have to take place on the same thread on which it was started, Thread Pool can allocate another thread. Storing context execution is needed to continue code execution properly.
+
+`Task` is a representation of asynchronous operation that can return a result
+`await` returns the control to caller (non-blocking)
+
+```cs
+app.MapGet("/async", async () =>
+{
+    // Doesn't block the thread, it's returned to the Thread Pool while waiting for the result
+    await Task.Delay(1000);
+    return "Hello";
+});
+```
+
+Result is still returned after 1s, but it doesn't block the thread, so thread can be reused in another request. This means that more requests can be handled this way. 
+
+Load test results:
+
+```
+API async load test scenario (5s timeout)
+    - requests: 109497
+    - ok:       109430  (p50 = 1218.56 ms, p75 = 1296.38 ms, p95 = 1704.96 ms, p99 = 1797.12 ms)
+    - fail:     67      (min > 5s)
+```
+
+![alt text](image-2.png)
+
+# Awaiting results
+
+Debugging doesn't stop asynchronous operations.
+
+The `await` keyword guarantees that the code after it won't be executed until the asynchronous operation is completed.
 
 ================================================================================================
 
@@ -1241,9 +1303,12 @@ await foreach (var stock in enumerator) {}
 
 1. `Thread.Sleep` vs `Task.Delay`
 
-1. `Task.Yield`
+`Thread.Sleep` - synchronus?
+`Task.Delay` - asynchronous?
 
-1. Locking with `lock` etc.
+2. `Task.Yield`
+
+3. Locking with `lock` etc.
 
 ================================================================================================
 
